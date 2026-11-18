@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.net.Uri;
 import android.view.View;
 import android.widget.*;
 import java.io.InputStream;
@@ -52,16 +51,12 @@ public class MainActivity extends Activity {
         Button accessibility = button("Enable drawing accessibility");
         accessibility.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
         root.addView(accessibility);
-        Button overlay = button("Allow floating controls");
-        overlay.setOnClickListener(v -> startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:"+getPackageName()))));
-        root.addView(overlay);
         Button start = button("Open floating controls");
         start.setOnClickListener(v -> {
             if(strokes.isEmpty()) { status.setText("Generate a sketch first"); return; }
-            if(!Settings.canDrawOverlays(this)) { status.setText("Enable floating controls first"); return; }
             if(DrawService.instance==null) { status.setText("Enable accessibility service first"); return; }
             DrawService.instance.showControls();
-            status.setText("Open Instagram drawing canvas and select your drawing area");
+            status.setText("Open the drawing canvas. Drag the floating controls and use Select area to move or resize the drawing frame.");
         });
         root.addView(start);
         setContentView(root);
@@ -112,7 +107,7 @@ public class MainActivity extends Activity {
         }
         strokes=paths;
         preview.setImageBitmap(result);
-        status.setText("Sketch ready: "+paths.size()+" strokes. Enable permissions, then open floating controls.");
+        status.setText("Sketch ready: "+paths.size()+" strokes. Enable Accessibility, open floating controls, and adjust the drawing frame.");
     }
     static void addPath(ArrayList<float[]> out,ArrayList<Float> src) {
         float[] p=new float[src.size()];
