@@ -136,24 +136,45 @@ public class MainActivity extends Activity {
         modeHint.setPadding(0, dp(6), 0, 0);
         root.addView(modeHint);
 
-        root.addView(section("Detail level"));
-        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, 0);
-        root.addView(detailChips);
+        TextView advancedToggle = pill("Adjust drawing & lettering   +", false, false);
+        LinearLayout.LayoutParams advancedToggleParams =
+                new LinearLayout.LayoutParams(-1, dp(50));
+        advancedToggleParams.topMargin = dp(18);
+        root.addView(advancedToggle, advancedToggleParams);
 
-        root.addView(section("Color coverage"));
+        LinearLayout advanced = new LinearLayout(this);
+        advanced.setOrientation(LinearLayout.VERTICAL);
+        advanced.setPadding(dp(14), dp(5), dp(14), dp(16));
+        advanced.setBackground(surface(CARD, 20, 1f, 0x1FFFFFFF));
+        advanced.setVisibility(View.GONE);
+        LinearLayout.LayoutParams advancedParams = new LinearLayout.LayoutParams(-1, -2);
+        advancedParams.topMargin = dp(8);
+        root.addView(advanced, advancedParams);
+        advancedToggle.setOnClickListener(v -> {
+            boolean opening = advanced.getVisibility() != View.VISIBLE;
+            advanced.setVisibility(opening ? View.VISIBLE : View.GONE);
+            advancedToggle.setText(opening ? "Close adjustments   −"
+                    : "Adjust drawing & lettering   +");
+        });
+
+        advanced.addView(section("Detail level"));
+        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, 0);
+        advanced.addView(detailChips);
+
+        advanced.addView(section("Color coverage"));
         TextView colorHint = label("Select Color mode, generate again, then choose each brush color as prompted.",
                 10.5f, MUTED);
         colorHint.setPadding(0, 0, 0, dp(5));
-        root.addView(colorHint);
-        root.addView(settingSlider("Fill density", 15, 95, settings.colorDensity, new SettingValue() {
+        advanced.addView(colorHint);
+        advanced.addView(settingSlider("Fill density", 15, 95, settings.colorDensity, new SettingValue() {
             @Override public void changed(int value) {
                 settings.colorDensity = value;
             }
         }));
 
-        root.addView(section("Canvas fit"));
+        advanced.addView(section("Canvas fit"));
         fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, 1);
-        root.addView(fitChips);
+        advanced.addView(fitChips);
 
         centerToggle = toggle("Center image", settings.centerImage);
         centerToggle.setOnClickListener(new View.OnClickListener() {
@@ -164,14 +185,14 @@ public class MainActivity extends Activity {
                 persist(true);
             }
         });
-        root.addView(centerToggle, new LinearLayout.LayoutParams(-1, dp(42)));
+        advanced.addView(centerToggle, new LinearLayout.LayoutParams(-1, dp(42)));
 
-        root.addView(section("Readable lettering"));
+        advanced.addView(section("Readable lettering"));
         TextView letteringHint = label("Type the words exactly to replace distorted lettering. Set the position in the image, then regenerate.",
                 10.5f, MUTED);
         letteringHint.setPadding(0, 0, 0, dp(8));
         letteringHint.setLineSpacing(dp(3), 1f);
-        root.addView(letteringHint);
+        advanced.addView(letteringHint);
         captionInput = new EditText(this);
         captionInput.setSingleLine(false);
         captionInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
@@ -184,18 +205,18 @@ public class MainActivity extends Activity {
         captionInput.setTextSize(13f);
         captionInput.setPadding(dp(14), dp(12), dp(14), dp(12));
         captionInput.setBackground(surface(CARD, 16, 1f, 0x22FFFFFF));
-        root.addView(captionInput, new LinearLayout.LayoutParams(-1, dp(90)));
-        root.addView(settingSlider("Text position X", 10, 90, settings.captionXPercent, new SettingValue() {
+        advanced.addView(captionInput, new LinearLayout.LayoutParams(-1, dp(90)));
+        advanced.addView(settingSlider("Text position X", 10, 90, settings.captionXPercent, new SettingValue() {
             @Override public void changed(int value) {
                 settings.captionXPercent = value;
             }
         }));
-        root.addView(settingSlider("Text position Y", 10, 90, settings.captionYPercent, new SettingValue() {
+        advanced.addView(settingSlider("Text position Y", 10, 90, settings.captionYPercent, new SettingValue() {
             @Override public void changed(int value) {
                 settings.captionYPercent = value;
             }
         }));
-        root.addView(settingSlider("Text size", 3, 18, settings.captionSizePercent, new SettingValue() {
+        advanced.addView(settingSlider("Text size", 3, 18, settings.captionSizePercent, new SettingValue() {
             @Override public void changed(int value) {
                 settings.captionSizePercent = value;
             }
@@ -203,7 +224,7 @@ public class MainActivity extends Activity {
         TextView applyText = pill("Apply lettering + regenerate", false, false);
         LinearLayout.LayoutParams applyParams = new LinearLayout.LayoutParams(-1, dp(48));
         applyParams.topMargin = dp(8);
-        root.addView(applyText, applyParams);
+        advanced.addView(applyText, applyParams);
         applyText.setOnClickListener(new View.OnClickListener() {
             @Override public void onClick(View v) {
                 settings.captionText = captionInput.getText().toString();
