@@ -3,7 +3,9 @@ package dev.autosketch.mobile;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Polyline post-processing: resampling, smoothing, Douglas-Peucker
@@ -427,6 +429,80 @@ public final class StrokeOptimizer {
             }
         });
         return sorted;
+    }
+
+    /**
+     * Drops strokes that mostly run on top of already kept strokes, measured as
+     * the fraction of points within {@code radius}. Longest strokes are supplied
+     * first, so the surviving line is the dominant outline. This is what removes
+     * the doubled "halo" you get from both sides of a thick ink line.
+     */
+    public static ArrayList<float[]> suppressCovered(ArrayList<float[]> strokes,
+                                                     float radius, float rejectRatio) {
+        ArrayList<float[]> kept = new ArrayList<>();
+        if (radius <= 0.01f) {
+            return new ArrayList<>(strokes);
+        }
+        float radiusSquared = radius * radius;
+        int cell = Math.max(2, Math.round(radius));
+        Map<Long, ArrayList<float[]>> grid = new HashMap<>();
+        for (float[] stroke : strokes) {
+            if (stroke.length < 4) {
+                continue;
+            }
+            int samples = 0;
+            int covered = 0;
+            for (int i = 0; i + 1 < stroke.length; i += 2) {
+                samples++;
+                if (hasPointNear(grid, stroke[i], stroke[i + 1], cell, radiusSquared)) {
+                    covered++;
+                }
+            }
+            if (samples > 0 && covered / (float) samples >= rejectRatio) {
+                continue;
+            }
+            kept.add(stroke);
+            for (int i = 0; i + 1 < stroke.length; i += 2) {
+                addPoint(grid, stroke[i], stroke[i + 1], cell);
+            }
+        }
+        return kept;
+    }
+
+    private static long cellKey(int x, int y) {
+        return ((long) x << 32) ^ (y & 0xFFFFFFFFL);
+    }
+
+    private static void addPoint(Map<Long, ArrayList<float[]>> grid, float x, float y, int cell) {
+        long key = cellKey((int) Math.floor(x / cell), (int) Math.floor(y / cell));
+        ArrayList<float[]> bucket = grid.get(key);
+        if (bucket == null) {
+            bucket = new ArrayList<>(4);
+            grid.put(key, bucket);
+        }
+        bucket.add(new float[]{x, y});
+    }
+
+    private static boolean hasPointNear(Map<Long, ArrayList<float[]>> grid, float x, float y,
+                                        int cell, float radiusSquared) {
+        int cx = (int) Math.floor(x / cell);
+        int cy = (int) Math.floor(y / cell);
+        for (int ox = -1; ox <= 1; ox++) {
+            for (int oy = -1; oy <= 1; oy++) {
+                ArrayList<float[]> bucket = grid.get(cellKey(cx + ox, cy + oy));
+                if (bucket == null) {
+                    continue;
+                }
+                for (float[] point : bucket) {
+                    float dx = point[0] - x;
+                    float dy = point[1] - y;
+                    if (dx * dx + dy * dy <= radiusSquared) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**

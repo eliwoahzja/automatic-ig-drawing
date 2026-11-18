@@ -68,7 +68,9 @@ public final class SketchEngine {
         ArrayList<int[]> chains = ContourTracer.trace(skeleton, width, height, 2);
         float referenceScale = DrawingSettings.clamp(width / (float) Math.max(120, canvasWidthPx),
                 0.45f, 2.6f);
-        float minLength = Math.max(1.8f, config.minStrokeLengthPx * referenceScale);
+        float minLength = Math.max(1.8f, config.minStrokeLengthPx * referenceScale)
+                * config.minStrokeMultiplier();
+        float tolerance = config.simplifyTolerance() * config.simplifyMultiplier();
         int smoothPasses = config.smoothing < 20 ? 0 : (config.smoothing < 60 ? 1 : 2);
 
         ArrayList<float[]> polylines = new ArrayList<>();
@@ -82,7 +84,7 @@ public final class SketchEngine {
             }
             points = StrokeOptimizer.resample(points, 1.15f);
             points = StrokeOptimizer.smooth(points, smoothPasses, config.smoothStrength());
-            points = StrokeOptimizer.simplify(points, config.simplifyTolerance());
+            points = StrokeOptimizer.simplify(points, tolerance);
             if (points.length < 4 || StrokeOptimizer.length(points) < minLength * 0.6f) {
                 continue;
             }
@@ -96,7 +98,7 @@ public final class SketchEngine {
         polylines = StrokeOptimizer.mergeTouching(polylines, 2.0f, 78f);
         ArrayList<float[]> cleaned = new ArrayList<>();
         for (float[] stroke : polylines) {
-            float[] simplified = StrokeOptimizer.simplify(stroke, config.simplifyTolerance() * 0.8f);
+            float[] simplified = StrokeOptimizer.simplify(stroke, tolerance * 0.8f);
             if (simplified.length >= 4 && StrokeOptimizer.length(simplified) >= minLength) {
                 cleaned.add(simplified);
             }
@@ -108,9 +110,33 @@ public final class SketchEngine {
         // Longest outlines first: structural strokes survive every later filter.
         cleaned = StrokeOptimizer.sortByLengthDescending(cleaned);
         cleaned = StrokeOptimizer.removeNearDuplicates(cleaned, Math.max(1.8f, minLength * 0.4f));
-        cleaned = filterOverlaps(cleaned, width, height, config);
-        if (cleaned.size() > config.maxStrokes()) {
-            cleaned = new ArrayList<>(cleaned.subList(0, config.maxStrokes()));
+        // Distance-based coverage removes the second line of every thick ink
+        // stroke (the "double outline" halo) and duplicate traces.
+        float coverageRadius = Math.max(2.2f, Math.min(width, height) * 0.008f)
+                * (config.renderMode == DrawingSettings.MODE_CLEAN ? 1.3f : 1f);
+        float rejectRatio = DrawingSettings.clamp(
+                0.94f - config.overlapRejectRatio() * 0.45f, 0.55f, 0.9f);
+        if (config.renderMode == DrawingSettings.MODE_CLEAN) {
+            rejectRatio = Math.max(0.5f, rejectRatio - 0.1f);
+        }
+        cleaned = StrokeOptimizer.suppressCovered(cleaned, coverageRadius, rejectRatio);
+
+        int outlineBudget = config.renderMode == DrawingSettings.MODE_FULL
+                ? Math.max(80, Math.round(config.maxStrokes() * 0.75f))
+                : config.maxStrokesForRenderMode();
+        if (cleaned.size() > outlineBudget) {
+            cleaned = new ArrayList<>(cleaned.subList(0, outlineBudget));
+        }
+        if (config.renderMode == DrawingSettings.MODE_FULL && !cancel.isCancelled()) {
+            ArrayList<float[]> hatch = HatchGenerator.generate(blurred, width, height, edges,
+                    config, referenceScale);
+            int totalBudget = config.maxStrokesForRenderMode();
+            for (float[] stroke : hatch) {
+                if (cleaned.size() >= totalBudget) {
+                    break;
+                }
+                cleaned.add(stroke);
+            }
         }
         cleaned = StrokeOptimizer.orderNearestNeighbour(cleaned);
         if (cancel.isCancelled()) {
@@ -137,57 +163,6 @@ public final class SketchEngine {
             points[i * 2 + 1] = (chain[i] / width) + 0.5f;
         }
         return points;
-    }
-
-    /**
-     * Rejects strokes that mostly run over pixels an already accepted stroke
-     * covers. Because strokes arrive longest-first this removes duplicates and
-     * double-traced contours without dropping the structure itself.
-     */
-    private static ArrayList<float[]> filterOverlaps(ArrayList<float[]> strokes, int width,
-                                                     int height, DrawingSettings settings) {
-        int cell = Math.max(2, Math.round(Math.min(width, height) / 260f));
-        int columns = width / cell + 2;
-        int rows = height / cell + 2;
-        boolean[] occupied = new boolean[columns * rows];
-        float rejectRatio = settings.overlapRejectRatio();
-        ArrayList<float[]> kept = new ArrayList<>();
-        for (float[] stroke : strokes) {
-            int samples = 0;
-            int covered = 0;
-            for (int i = 0; i + 1 < stroke.length; i += 2) {
-                samples++;
-                if (occupied[cellIndex(stroke[i], stroke[i + 1], cell, columns, rows)]) {
-                    covered++;
-                }
-            }
-            if (samples > 0 && covered / (float) samples > rejectRatio) {
-                continue;
-            }
-            kept.add(stroke);
-            for (int i = 2; i + 1 < stroke.length; i += 2) {
-                markSegment(occupied, stroke[i - 2], stroke[i - 1], stroke[i], stroke[i + 1],
-                        cell, columns, rows);
-            }
-        }
-        return kept;
-    }
-
-    private static int cellIndex(float x, float y, int cell, int columns, int rows) {
-        int column = DrawingSettings.clamp((int) (x / cell), 0, columns - 1);
-        int row = DrawingSettings.clamp((int) (y / cell), 0, rows - 1);
-        return row * columns + column;
-    }
-
-    private static void markSegment(boolean[] occupied, float x0, float y0, float x1, float y1,
-                                     int cell, int columns, int rows) {
-        float dx = x1 - x0;
-        float dy = y1 - y0;
-        int steps = Math.max(1, (int) (Math.hypot(dx, dy) / (cell * 0.5f)) + 1);
-        for (int s = 0; s <= steps; s++) {
-            float t = s / (float) steps;
-            occupied[cellIndex(x0 + dx * t, y0 + dy * t, cell, columns, rows)] = true;
-        }
     }
 
     private static ArrayList<float[]> normalize(ArrayList<float[]> strokes, int width, int height) {

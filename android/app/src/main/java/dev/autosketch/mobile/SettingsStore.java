@@ -26,6 +26,7 @@ public final class SettingsStore {
         SharedPreferences prefs = prefs(context);
         DrawingSettings settings = new DrawingSettings();
         settings.detailLevel = prefs.getInt("detail", settings.detailLevel);
+        settings.renderMode = prefs.getInt("render_mode", settings.renderMode);
         settings.noiseReduction = prefs.getInt("noise", settings.noiseReduction);
         settings.edgeSensitivity = prefs.getInt("sensitivity", settings.edgeSensitivity);
         settings.contrast = prefs.getInt("contrast", settings.contrast);
@@ -48,6 +49,7 @@ public final class SettingsStore {
     public static void save(Context context, DrawingSettings settings) {
         prefs(context).edit()
                 .putInt("detail", settings.detailLevel)
+                .putInt("render_mode", settings.renderMode)
                 .putInt("noise", settings.noiseReduction)
                 .putInt("sensitivity", settings.edgeSensitivity)
                 .putInt("contrast", settings.contrast)

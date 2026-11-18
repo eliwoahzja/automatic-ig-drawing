@@ -12,7 +12,8 @@ produced dots, blobs and distorted shapes. That code is gone. The drawing engine
 is now a real image-processing pipeline:
 
 1. image decoded and bounded (max 1280 px, aspect ratio preserved)
-2. grayscale conversion with brightness, contrast, invert and local-contrast normalisation
+2. grayscale conversion with alpha composited over white (transparent PNG cut-outs stay blank),
+   brightness, contrast, invert and local-contrast normalisation
    (so faint eyes, brows and pale outlines survive thresholding) plus background flattening
 3. configurable Gaussian smoothing
 4. Sobel gradients
@@ -23,12 +24,37 @@ is now a real image-processing pipeline:
 9. contour tracing into ordered polylines (endpoints, junctions, loops)
 10. Douglas-Peucker simplification
 11. junction-fragment merging with tangent continuity
-12. duplicate/overlap rejection on an occupancy grid
-13. nearest-neighbour stroke ordering with direction reversal
-14. resampling to screen pixels and gesture chunking
+12. distance-based coverage suppression that removes duplicate traces and the second
+    line of every thick ink stroke (the "double outline" halo)
+13. optional tonal cross-hatching for the full drawing mode
+14. nearest-neighbour stroke ordering with direction reversal
+15. canvas-adaptive resampling, minimum stroke length and stroke budget, then gesture chunking
 
 Every step is pure Java (`EdgeDetector`, `ContourTracer`, `StrokeOptimizer`,
-`CanvasMapper`, `SketchEngine`) and covered by JVM unit tests.
+`HatchGenerator`, `CanvasMapper`, `SketchEngine`) and covered by JVM unit tests.
+
+## Render modes
+
+- **Sketch** (default) draws the cleaned contours only — the classic line-art look.
+- **Clean** prunes harder: longer minimum stroke length, stronger simplification and
+  aggressive double-line removal. Best for busy photos and small canvases.
+- **Full** adds tonal hatching on top of the outlines. Three crossing hatch layers
+  cover mid tones, shadows and the darkest areas, generated only near detected edges
+  and only where the pixels are actually dark, so backgrounds stay blank. Hatch
+  spacing scales with the selected canvas size instead of the source image.
+
+Hatching is drawn with the same continuous gesture pipeline as the outlines; there
+are no fills. It needs many short strokes, so use a thin brush and the fastest
+comfortable speed. On a small canvas the mapper automatically reduces the stroke
+budget and raises the minimum stroke length, which prevents the dense white blob
+that a thick brush produces from tiny details.
+
+`ContourTracer` corner handling uses 8-connectivity with a corner-cut rule; without
+it circles fragment into hundreds of chains.
+
+Instagram's own doodle canvas applies a native spring smoother to each incoming
+stroke (its `DoodleSpringSmoother` in the decoded app is a JNI wrapper), so sending
+evenly spaced, already-smoothed points is exactly what the receiving canvas expects.
 
 ## Continuous strokes
 
@@ -59,7 +85,7 @@ Compact dark translucent panel:
 - minimise to a small draggable icon that shows drawing progress
 - Start, Pause, Resume, Stop, Area, Preview, Settings, Close
 
-Settings include detail level, edge sensitivity, noise reduction, contrast,
+Settings include render mode, detail level, edge sensitivity, noise reduction, contrast,
 brightness, invert, background suppression, speed, smoothing, minimum/maximum
 stroke length, point spacing, simplification, overlap reduction and the canvas
 fit mode. Image-processing changes re-run the pipeline in the background and
@@ -79,7 +105,8 @@ drawn; it can be hidden before starting.
 2. Open Auto Sketch, choose an image, tap **Generate sketch**.
 3. Enable *Auto Sketch Mobile* in Android accessibility settings.
 4. Tap **Floating controls**.
-5. In Instagram, open a story/post drawing canvas and pick a thin brush and colour.
+5. In Instagram, open a story/post drawing canvas and pick a thin brush and colour
+   (thinnest brush for **Full** mode).
 6. Tap **Area**, position the frame over the canvas, tap **Use area**.
 7. Move the panel off the canvas, tap **Start**. The panel minimises itself so
    it does not cover the drawing.
@@ -94,6 +121,7 @@ android/app/src/main/java/dev/autosketch/mobile/
   SketchEngine.java        pipeline orchestration (pure Java)
   EdgeDetector.java        grayscale, blur, Sobel, NMS, hysteresis, thinning
   ContourTracer.java       skeleton -> ordered polylines
+  HatchGenerator.java      tonal cross-hatching for full drawing mode
   StrokeOptimizer.java     resample, simplify, merge, dedupe, order, chunk
   CanvasMapper.java        contain/fill/stretch, clipping, gesture resampling
   DrawingSettings.java     settings model and derived pipeline parameters
@@ -110,7 +138,7 @@ android/app/src/main/java/dev/autosketch/mobile/
 
 ```bash
 cd android
-gradle testDebugUnitTest   # JVM tests: edge detection, tracing, mapping, continuity
+gradle testDebugUnitTest   # JVM tests: edge detection, tracing, hatching, mapping, modes
 gradle assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
 ```
 
@@ -130,5 +158,7 @@ CI (`.github/workflows/build-android.yml`) runs both on every push that touches
   Instagram controls.
 - Instagram changes its UI regularly. The app has been verified by build and
   unit tests, not on a physical device against a live Instagram build.
-- Very small canvases reduce effective stroke detail; increase detail level or
-  select a larger area.
+- Very small canvases automatically receive fewer, longer strokes. If detail is
+  still lost, select a larger area or use **Clean** mode.
+- **Full** mode is stroke-heavy: a 1080 px canvas can receive more than a thousand
+  short hatch strokes, so a complete drawing takes noticeably longer than Sketch.

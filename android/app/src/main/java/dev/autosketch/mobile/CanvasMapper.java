@@ -94,7 +94,17 @@ public final class CanvasMapper {
                 settings.fitMode, settings.centerImage);
         float spacing = Math.max(1.2f, settings.pointSpacingPx);
         float tolerance = 0.3f + DrawingSettings.clamp(settings.simplification, 0, 100) / 100f * 0.55f;
-        float minLength = Math.max(1f, settings.minStrokeLengthPx);
+        // Detail has to scale with the canvas: on a small drawing area long,
+        // structural strokes read well while tiny details collapse into a blob.
+        float shortSide = Math.min(area.width(), area.height());
+        float adaptiveMinLength = Math.max(Math.max(1f, settings.minStrokeLengthPx),
+                shortSide * 0.018f);
+        if (settings.renderMode == DrawingSettings.MODE_CLEAN) {
+            adaptiveMinLength *= 1.6f;
+        } else if (settings.renderMode == DrawingSettings.MODE_FULL) {
+            adaptiveMinLength *= 0.8f;
+        }
+        float minLength = adaptiveMinLength;
         for (float[] stroke : normalized) {
             if (stroke == null || stroke.length < 4) {
                 continue;
@@ -121,7 +131,16 @@ public final class CanvasMapper {
                 }
             }
         }
-        return out;
+        int perCanvas = Math.max(24, Math.round(shortSide / 2.6f));
+        if (settings.renderMode == DrawingSettings.MODE_FULL) {
+            perCanvas *= 3;
+        }
+        int budget = Math.min(perCanvas, settings.maxStrokesForRenderMode());
+        if (out.size() > budget) {
+            out = StrokeOptimizer.sortByLengthDescending(out);
+            out = new ArrayList<>(out.subList(0, budget));
+        }
+        return StrokeOptimizer.orderNearestNeighbour(out);
     }
 
     public static float[] clampToRect(float[] points, Rect area) {

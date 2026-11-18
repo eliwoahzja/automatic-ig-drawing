@@ -37,6 +37,7 @@ public class MainActivity extends Activity {
     private TextView accessibilityState;
     private TextView generateButton;
     private TextView centerToggle;
+    private LinearLayout modeChips;
     private LinearLayout detailChips;
     private LinearLayout fitChips;
     private DrawingSettings settings;
@@ -123,12 +124,20 @@ public class MainActivity extends Activity {
         meta.setPadding(0, dp(3), 0, dp(6));
         root.addView(meta);
 
+        root.addView(section("Render mode"));
+        modeChips = segmented(DrawingSettings.MODE_NAMES, settings.renderMode, 2);
+        root.addView(modeChips);
+        TextView modeHint = label("Sketch: outlines · Clean: fewer, stronger lines · "
+                + "Full: outlines plus tonal hatching (use a thin brush)", 9.5f, 0x77FFFFFF);
+        modeHint.setPadding(0, dp(6), 0, 0);
+        root.addView(modeHint);
+
         root.addView(section("Detail level"));
-        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, true);
+        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, 0);
         root.addView(detailChips);
 
         root.addView(section("Canvas fit"));
-        fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, false);
+        fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, 1);
         root.addView(fitChips);
 
         centerToggle = toggle("Center image", settings.centerImage);
@@ -235,7 +244,7 @@ public class MainActivity extends Activity {
         return view;
     }
 
-    private LinearLayout segmented(final String[] labels, int selected, final boolean detail) {
+    private LinearLayout segmented(final String[] labels, int selected, final int kind) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(2), 0, dp(2));
@@ -249,14 +258,17 @@ public class MainActivity extends Activity {
             chip.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    if (detail) {
+                    if (kind == 0) {
                         settings.detailLevel = index;
                         styleSegments(detailChips, settings.detailLevel);
-                    } else {
+                    } else if (kind == 1) {
                         settings.fitMode = index;
                         styleSegments(fitChips, settings.fitMode);
+                    } else {
+                        settings.renderMode = index;
+                        styleSegments(modeChips, settings.renderMode);
                     }
-                    persist(false);
+                    persist(kind != 1);
                 }
             });
         }
@@ -410,7 +422,7 @@ public class MainActivity extends Activity {
         SettingsStore.save(this, settings);
         preview.setSketch(SketchSession.sketch(), settings);
         if (structural) {
-            status.setText("Detail changed · generate the sketch again to apply it");
+            status.setText("Render settings changed · generate again to apply them");
         }
     }
 
@@ -422,6 +434,7 @@ public class MainActivity extends Activity {
         settings = SettingsStore.load(this);
         SketchSession.updateSettings(settings);
         source = SketchSession.source();
+        styleSegments(modeChips, settings.renderMode);
         styleSegments(detailChips, settings.detailLevel);
         styleSegments(fitChips, settings.fitMode);
         styleToggle(centerToggle, settings.centerImage);

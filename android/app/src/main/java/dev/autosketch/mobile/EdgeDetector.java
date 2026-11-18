@@ -20,7 +20,19 @@ public final class EdgeDetector {
         boolean invert = settings.invert;
         for (int i = 0; i < gray.length; i++) {
             int pixel = argb[i];
-            int value = (((pixel >> 16) & 0xFF) * 77 + ((pixel >> 8) & 0xFF) * 150 + (pixel & 0xFF) * 29) >> 8;
+            int red = (pixel >> 16) & 0xFF;
+            int green = (pixel >> 8) & 0xFF;
+            int blue = pixel & 0xFF;
+            int alpha = (pixel >>> 24) & 0xFF;
+            if (alpha < 255) {
+                // Transparent pixels arrive as black RGB; composite them over white so
+                // PNG cut-outs do not read as solid ink (and do not hatch).
+                int inverse = 255 - alpha;
+                red = (red * alpha + 255 * inverse) / 255;
+                green = (green * alpha + 255 * inverse) / 255;
+                blue = (blue * alpha + 255 * inverse) / 255;
+            }
+            int value = (red * 77 + green * 150 + blue * 29) >> 8;
             if (invert) {
                 value = 255 - value;
             }

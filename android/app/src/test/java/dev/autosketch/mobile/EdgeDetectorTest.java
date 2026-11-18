@@ -22,6 +22,19 @@ public class EdgeDetectorTest {
     }
 
     @Test
+    public void transparentPixelsCompositeOverWhite() {
+        int[] argb = {0x00000000, 0x40FF0000, 0x80000000, 0xFF000000};
+        DrawingSettings settings = new DrawingSettings();
+        settings.detailLevel = DrawingSettings.DETAIL_LOW;
+        settings.backgroundSuppression = 0;
+        int[] gray = EdgeDetector.grayscale(argb, 4, 1, settings);
+        assertEquals("fully transparent is blank paper", 255, gray[0]);
+        assertTrue("partly transparent ink is lighter than solid ink", gray[1] > 100);
+        assertTrue("semi-transparent black stays grey", gray[2] > 100 && gray[2] < 160);
+        assertEquals("opaque ink is black", 0, gray[3]);
+    }
+
+    @Test
     public void invertAndBackgroundSuppressionApply() {
         int[] argb = {0xFFFF0000, 0xFFF0F0F0};
         DrawingSettings settings = new DrawingSettings();

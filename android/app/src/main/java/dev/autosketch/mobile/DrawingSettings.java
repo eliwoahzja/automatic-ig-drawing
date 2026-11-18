@@ -15,11 +15,21 @@ public final class DrawingSettings {
     public static final int FIT_FILL = 1;
     public static final int FIT_STRETCH = 2;
 
+    /** Outline sketch: traced contours only, the classic look. */
+    public static final int MODE_SKETCH = 0;
+    /** Cleaned line art: fewer, longer outlines and strong double-line removal. */
+    public static final int MODE_CLEAN = 1;
+    /** Full drawing: cleaned outlines plus tonal cross-hatching for shading. */
+    public static final int MODE_FULL = 2;
+
     public static final String[] DETAIL_NAMES = {"Low", "Medium", "High", "Ultra"};
     public static final String[] FIT_NAMES = {"Contain", "Fill", "Stretch"};
+    public static final String[] MODE_NAMES = {"Sketch", "Clean", "Full"};
 
     /** 0..3, see DETAIL_*. */
     public int detailLevel = DETAIL_HIGH;
+    /** 0..2, see MODE_*. */
+    public int renderMode = MODE_SKETCH;
 
     /** 0..100, drives the Gaussian sigma before edge detection. */
     public int noiseReduction = 40;
@@ -61,6 +71,7 @@ public final class DrawingSettings {
     public DrawingSettings copy() {
         DrawingSettings other = new DrawingSettings();
         other.detailLevel = detailLevel;
+        other.renderMode = renderMode;
         other.noiseReduction = noiseReduction;
         other.edgeSensitivity = edgeSensitivity;
         other.contrast = contrast;
@@ -116,6 +127,33 @@ public final class DrawingSettings {
             default:
                 return 900;
         }
+    }
+
+    /** Stroke budget including hatching, per render mode. */
+    public int maxStrokesForRenderMode() {
+        int base = maxStrokes();
+        if (renderMode == MODE_FULL) {
+            return Math.round(base * 1.8f);
+        }
+        if (renderMode == MODE_CLEAN) {
+            return Math.max(60, Math.round(base * 0.65f));
+        }
+        return base;
+    }
+
+    /** Clean mode drops small details; full mode keeps short hatch dashes. */
+    public float minStrokeMultiplier() {
+        if (renderMode == MODE_CLEAN) {
+            return 2.2f;
+        }
+        if (renderMode == MODE_FULL) {
+            return 0.85f;
+        }
+        return 1f;
+    }
+
+    public float simplifyMultiplier() {
+        return renderMode == MODE_CLEAN ? 1.6f : 1f;
     }
 
     public float blurSigma() {

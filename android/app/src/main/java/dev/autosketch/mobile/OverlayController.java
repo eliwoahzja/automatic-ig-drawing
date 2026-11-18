@@ -260,6 +260,7 @@ public final class OverlayController {
     private static void copyInto(DrawingSettings from, DrawingSettings to) {
         DrawingSettings copy = from.copy();
         to.detailLevel = copy.detailLevel;
+        to.renderMode = copy.renderMode;
         to.noiseReduction = copy.noiseReduction;
         to.edgeSensitivity = copy.edgeSensitivity;
         to.contrast = copy.contrast;
@@ -644,6 +645,14 @@ public final class OverlayController {
         titleRow.addView(back, new LinearLayout.LayoutParams(dp(48), dp(20)));
         page.addView(titleRow, new LinearLayout.LayoutParams(-1, dp(22)));
 
+        page.addView(sectionLabel("Render mode"));
+        page.addView(segmented(DrawingSettings.MODE_NAMES, working.renderMode, true,
+                new ValueSink() {
+                    @Override
+                    public void onValue(int value, boolean reprocess) {
+                        working.renderMode = value;
+                    }
+                }));
         page.addView(sectionLabel("Detail"));
         page.addView(segmented(DrawingSettings.DETAIL_NAMES, working.detailLevel, true,
                 new ValueSink() {
