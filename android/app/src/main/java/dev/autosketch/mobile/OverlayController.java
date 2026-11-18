@@ -88,6 +88,7 @@ public final class OverlayController {
     private ProgressBarView progressBar;
     private TextView settingsButtonLabel;
     private TextView previewButtonLabel;
+    private LinearLayout colorModeRow;
     private TextView colorStepLabel;
     private TextView nextColorButton;
 
@@ -519,6 +520,7 @@ public final class OverlayController {
         page.addView(secondRow, secondParams);
 
         LinearLayout colorRow = row();
+        colorModeRow = colorRow;
         colorRow.setPadding(dp(4), dp(6), dp(2), 0);
         colorStepLabel = label("", 9.5f, MUTED);
         colorStepLabel.setSingleLine(true);
@@ -1030,6 +1032,9 @@ public final class OverlayController {
         boolean hasColors = sketch != null && !sketch.colorLayers.isEmpty();
         int currentColor = hasColors ? clamp(listener.currentColorLayer(), 0,
                 sketch.colorLayers.size() - 1) : 0;
+        if (colorModeRow != null) {
+            colorModeRow.setVisibility(hasColors ? View.VISIBLE : View.GONE);
+        }
         if (colorStepLabel != null) {
             colorStepLabel.setVisibility(hasColors ? View.VISIBLE : View.GONE);
             if (hasColors) {

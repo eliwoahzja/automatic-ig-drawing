@@ -35,8 +35,8 @@ public final class SketchPreviewView extends View {
 
     public SketchPreviewView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        cardPaint.setColor(0xFF12131A);
-        borderPaint.setColor(0x1AFFFFFF);
+        cardPaint.setColor(0xFF141722);
+        borderPaint.setColor(0x24FFFFFF);
         borderPaint.setStyle(Paint.Style.STROKE);
         borderPaint.setStrokeWidth(dp(1));
         imagePaint.setAlpha(120);
@@ -63,6 +63,9 @@ public final class SketchPreviewView extends View {
         sketch = nextSketch == null ? Sketch.empty() : nextSketch;
         settings = nextSettings == null ? new DrawingSettings() : nextSettings;
         strokePaint.setStrokeWidth(dp(1.1f));
+        imagePaint.setAlpha(sketch.isEmpty() ? 225 :
+                nextSettings != null && nextSettings.renderMode == DrawingSettings.MODE_COLOR
+                        ? 18 : 65);
         invalidate();
     }
 
