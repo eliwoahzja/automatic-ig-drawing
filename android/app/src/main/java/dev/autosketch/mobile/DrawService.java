@@ -128,7 +128,7 @@ public class DrawService extends AccessibilityService {
     private Button button(String text) {
         Button button = new Button(this);
         button.setText(text);
-        button.setTextAllCaps(false);
+        button.setAllCaps(false);
         button.setTextSize(12);
         button.setMinHeight(0);
         button.setMinimumHeight(0);
