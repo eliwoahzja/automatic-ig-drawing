@@ -20,7 +20,11 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Install Android SDK packages
-        run: sdkmanager --install 'platforms;android-35' 'build-tools;35.0.0'
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
+          test -n "$SDKMANAGER"
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
         working-directory: android
