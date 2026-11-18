@@ -32,15 +32,15 @@ The repository contains a Vercel-compatible serverless function at `api/ai-draw.
 
 Deploy the repository to a private Vercel project. Configure the following server environment variables:
 
-- `OPENAI_API_KEY` : the provider key. Set this only in Vercel environment settings.
+- `GEMINI_API_KEY` : the Gemini API key. Set this only in Vercel environment settings.
 - `AI_DRAW_ACCESS_TOKEN` : a long, random secret that restricts access to your endpoint.
-- `AI_MODEL` : optional vision-capable OpenAI model (defaults to `gpt-4.1`).
+- `AI_MODEL` : optional Gemini vision model (defaults to `gemini-2.5-flash`).
 
 Deploy the backend and confirm the function is available at:
 
 `https://YOUR-DEPLOYMENT.vercel.app/api/ai-draw`
 
-In Android, open **Adjust drawing & lettering**, then enter the HTTPS URL. Enter the private backend access token in the separate field. Never enter your OpenAI provider key into the Android app. The private token is kept only in current UI memory, while the endpoint URL is saved locally.
+In Android, open **Adjust drawing & lettering**, then enter the HTTPS URL. Enter the private backend access token in the separate field. Never enter your Gemini provider key into the Android app. The private token is kept only in current UI memory, while the endpoint URL is saved locally.
 
 The AI backend requires an internet connection and sends the selected compressed image to the AI service only when you press AI Draw. Provider charges apply to the configured server. Protect access, monitor usage, and restrict public deployment.
 

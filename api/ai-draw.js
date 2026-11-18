@@ -1,24 +1,22 @@
 const crypto = require('node:crypto');
 
 const imageSchema = {
-  type: 'object',
-  additionalProperties: false,
+  type: 'OBJECT',
   properties: {
-    subject: { type: 'string' },
-    essentialDetails: { type: 'array', items: { type: 'string' } },
-    lettering: { type: 'array', items: { type: 'string' } }
+    subject: { type: 'STRING' },
+    essentialDetails: { type: 'ARRAY', items: { type: 'STRING' } },
+    lettering: { type: 'ARRAY', items: { type: 'STRING' } }
   },
   required: ['subject', 'essentialDetails', 'lettering']
 };
 
 const strokeSchema = {
-  type: 'object',
-  additionalProperties: false,
+  type: 'OBJECT',
   properties: {
-    summary: { type: 'string' },
+    summary: { type: 'STRING' },
     strokes: {
-      type: 'array',
-      items: { type: 'array', items: { type: 'array', items: { type: 'number' } } }
+      type: 'ARRAY',
+      items: { type: 'ARRAY', items: { type: 'ARRAY', items: { type: 'NUMBER' } } }
     }
   },
   required: ['summary', 'strokes']
@@ -34,40 +32,50 @@ function validToken(received, expected) {
 }
 
 async function runVision(image, instruction, schema, name, budget) {
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
-      'Content-Type': 'application/json'
-    },
-    signal: AbortSignal.timeout(75000),
-    body: JSON.stringify({
-      model: process.env.AI_MODEL || 'gpt-4.1',
-      store: false,
-      max_output_tokens: budget,
-      text: { format: { type: 'json_schema', name, strict: true, schema } },
-      input: [{
-        role: 'user',
-        content: [
-          { type: 'input_text', text: instruction },
-          { type: 'input_image', image_url: image, detail: 'high' }
-        ]
-      }]
-    })
-  });
+  const model = process.env.AI_MODEL || 'gemini-2.5-flash';
+  const base64Data = image.slice('data:image/jpeg;base64,'.length);
+  const response = await fetch(
+    'https://generativelanguage.googleapis.com/v1beta/models/' +
+      encodeURIComponent(model) + ':generateContent', {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': process.env.GEMINI_API_KEY,
+        'Content-Type': 'application/json'
+      },
+      signal: AbortSignal.timeout(90000),
+      body: JSON.stringify({
+        contents: [{
+          role: 'user',
+          parts: [
+            { text: instruction },
+            { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
+          ]
+        }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: schema,
+          maxOutputTokens: budget,
+          temperature: 0.2
+        }
+      })
+    }
+  );
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error('Vision provider returned ' + response.status +
-      ': ' + error.slice(0, 150));
+    let details = '';
+    try {
+      const error = await response.json();
+      details = typeof error?.error?.message === 'string'
+        ? error.error.message.slice(0, 120) : '';
+    } catch (_) {}
+    throw new Error('Gemini returned HTTP ' + response.status +
+      (details ? ': ' + details : ''));
   }
   const result = await response.json();
-  let content = '';
-  for (const item of result.output || []) {
-    for (const section of item.content || []) {
-      if (section.type === 'output_text') content += section.text || '';
-    }
-  }
-  if (!content) throw new Error('Vision provider returned no structured text');
+  const content = (result.candidates || [])
+    .flatMap(candidate => candidate.content?.parts || [])
+    .filter(part => typeof part.text === 'string')
+    .map(part => part.text).join('').trim();
+  if (!content) throw new Error('Gemini returned no structured text for ' + name);
   return JSON.parse(content);
 }
 
@@ -77,8 +85,8 @@ module.exports = async function handler(req, res) {
     res.setHeader('Allow', 'POST');
     return res.status(405).json({ error: 'Use POST' });
   }
-  if (!process.env.OPENAI_API_KEY || !process.env.AI_DRAW_ACCESS_TOKEN)
-    return res.status(503).json({ error: 'The private AI drawer server is not configured' });
+  if (!process.env.GEMINI_API_KEY || !process.env.AI_DRAW_ACCESS_TOKEN)
+    return res.status(503).json({ error: 'The private Gemini AI drawer server is not configured' });
   if (!validToken(req.headers.authorization, process.env.AI_DRAW_ACCESS_TOKEN))
     return res.status(401).json({ error: 'Invalid private access token' });
 
