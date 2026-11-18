@@ -20,6 +20,7 @@ import android.view.accessibility.AccessibilityEvent;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import java.util.ArrayList;
 
@@ -43,6 +44,8 @@ public class DrawService extends AccessibilityService {
     private Rect bounds;
     private int controlX = -1;
     private int controlY = -1;
+    private int controlWidth = -1;
+    private int controlHeight = -1;
     private int index = 0;
     private int session = 0;
     private boolean paused = true;
@@ -197,20 +200,78 @@ public class DrawService extends AccessibilityService {
         });
         secondRow.addView(hide, new LinearLayout.LayoutParams(0, dp(48), 1));
         controlBody.addView(secondRow);
-        panel.addView(controlBody);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.setVerticalScrollBarEnabled(false);
+        scroll.addView(controlBody);
+        panel.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+
+        LinearLayout footer = new LinearLayout(this);
+        footer.setGravity(Gravity.CENTER_VERTICAL);
+        TextView hint = label("Drag corner to resize", 10);
+        hint.setPadding(dp(6), 0, 0, 0);
+        footer.addView(hint, new LinearLayout.LayoutParams(0, -1, 1));
+        TextView resizeGrip = label("⤡", 26);
+        resizeGrip.setGravity(Gravity.CENTER);
+        resizeGrip.setBackground(rounded(0xff34425a, 8));
+        footer.addView(resizeGrip, new LinearLayout.LayoutParams(dp(48), dp(36)));
+        panel.addView(footer, new LinearLayout.LayoutParams(-1, dp(39)));
+
+        resizeGrip.setOnTouchListener(new View.OnTouchListener() {
+            private float downX;
+            private float downY;
+            private int initialWidth;
+            private int initialHeight;
+
+            @Override
+            public boolean onTouch(View view, MotionEvent event) {
+                switch (event.getActionMasked()) {
+                    case MotionEvent.ACTION_DOWN:
+                        downX = event.getRawX();
+                        downY = event.getRawY();
+                        initialWidth = controlsParams.width;
+                        initialHeight = controlsParams.height;
+                        return true;
+                    case MotionEvent.ACTION_MOVE:
+                        Point size = displaySize();
+                        int maximumWidth = Math.max(dp(175), size.x - controlsParams.x - dp(8));
+                        int maximumHeight = Math.max(dp(130), size.y - controlsParams.y - dp(12));
+                        controlWidth = clamp(initialWidth + Math.round(event.getRawX() - downX),
+                                dp(175), maximumWidth);
+                        controlHeight = clamp(initialHeight + Math.round(event.getRawY() - downY),
+                                dp(130), maximumHeight);
+                        controlsParams.width = controlWidth;
+                        controlsParams.height = controlHeight;
+                        manager.updateViewLayout(controls, controlsParams);
+                        return true;
+                    case MotionEvent.ACTION_UP:
+                    case MotionEvent.ACTION_CANCEL:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        });
 
         minimize.setOnClickListener(v -> {
-            boolean opening = controlBody.getVisibility() != View.VISIBLE;
-            controlBody.setVisibility(opening ? View.VISIBLE : View.GONE);
+            boolean opening = scroll.getVisibility() != View.VISIBLE;
+            scroll.setVisibility(opening ? View.VISIBLE : View.GONE);
+            footer.setVisibility(opening ? View.VISIBLE : View.GONE);
+            controlsParams.height = opening ? controlHeight : dp(62);
+            manager.updateViewLayout(controls, controlsParams);
             minimize.setText(opening ? "−" : "+");
         });
 
         controls = panel;
-        controlsParams = overlayParams(dp(230), -2, true);
-        controlX = controlX < 0 ? screen.x - dp(238) : controlX;
-        controlY = controlY < 0 ? dp(110) : controlY;
-        controlsParams.x = clamp(controlX, 0, Math.max(0, screen.x - dp(230)));
-        controlsParams.y = clamp(controlY, 0, Math.max(0, screen.y - dp(60)));
+        if (controlWidth < 0) controlWidth = dp(204);
+        if (controlHeight < 0) controlHeight = dp(257);
+        controlWidth = Math.min(controlWidth, screen.x - dp(12));
+        controlHeight = Math.min(controlHeight, screen.y - dp(80));
+        controlsParams = overlayParams(controlWidth, controlHeight, true);
+        controlX = controlX < 0 ? screen.x - controlWidth - dp(12) : controlX;
+        controlY = controlY < 0 ? dp(94) : controlY;
+        controlsParams.x = clamp(controlX, 0, Math.max(0, screen.x - controlWidth));
+        controlsParams.y = clamp(controlY, 0, Math.max(0, screen.y - controlHeight));
         manager.addView(controls, controlsParams);
         dragLabel.setOnTouchListener(new View.OnTouchListener() {
             private float startX;
@@ -229,8 +290,8 @@ public class DrawService extends AccessibilityService {
                         return true;
                     case MotionEvent.ACTION_MOVE:
                         Point screen = displaySize();
-                        int width = controls.getWidth() > 0 ? controls.getWidth() : dp(230);
-                        int height = controls.getHeight() > 0 ? controls.getHeight() : dp(60);
+                        int width = controls.getWidth() > 0 ? controls.getWidth() : controlWidth;
+                        int height = controls.getHeight() > 0 ? controls.getHeight() : controlHeight;
                         controlsParams.x = clamp(originX + Math.round(event.getRawX() - startX),
                                 0, Math.max(0, screen.x - width));
                         controlsParams.y = clamp(originY + Math.round(event.getRawY() - startY),
@@ -487,13 +548,20 @@ public class DrawService extends AccessibilityService {
             return;
         }
         Rect area = new Rect(bounds);
+        float imageWidth = Math.max(1f, MainActivity.sketchWidth);
+        float imageHeight = Math.max(1f, MainActivity.sketchHeight);
+        float scale = Math.min(area.width() / imageWidth, area.height() / imageHeight);
+        float fittedWidth = imageWidth * scale;
+        float fittedHeight = imageHeight * scale;
+        float originX = area.left + (area.width() - fittedWidth) / 2f;
+        float originY = area.top + (area.height() - fittedHeight) / 2f;
         Path path = new Path();
-        float x = area.left + Math.max(0f, Math.min(1f, points[0])) * area.width();
-        float y = area.top + Math.max(0f, Math.min(1f, points[1])) * area.height();
+        float x = originX + Math.max(0f, Math.min(1f, points[0])) * fittedWidth;
+        float y = originY + Math.max(0f, Math.min(1f, points[1])) * fittedHeight;
         path.moveTo(x, y);
         for (int i = 2; i + 1 < points.length; i += 2) {
-            x = area.left + Math.max(0f, Math.min(1f, points[i])) * area.width();
-            y = area.top + Math.max(0f, Math.min(1f, points[i + 1])) * area.height();
+            x = originX + Math.max(0f, Math.min(1f, points[i])) * fittedWidth;
+            y = originY + Math.max(0f, Math.min(1f, points[i + 1])) * fittedHeight;
             path.lineTo(x, y);
         }
         long duration = Math.max(80, Math.min(1600, points.length * 2L));

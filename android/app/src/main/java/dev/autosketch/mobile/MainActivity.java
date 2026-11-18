@@ -13,12 +13,13 @@ import java.io.InputStream;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity {
-    static ArrayList<float[]> strokes = new ArrayList<>();
+    static volatile ArrayList<float[]> strokes = new ArrayList<>();
+    static volatile int sketchWidth = 1;
+    static volatile int sketchHeight = 1;
     Bitmap image;
     ImageView preview;
     TextView status;
     SeekBar detail;
-    int quality = 2;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         LinearLayout root = new LinearLayout(this);
@@ -75,43 +76,37 @@ public class MainActivity extends Activity {
             double scale=Math.min(1.0,512.0/Math.max(w,h));
             image=Bitmap.createScaledBitmap(image,Math.max(1,(int)(w*scale)),Math.max(1,(int)(h*scale)),true);
             preview.setImageBitmap(image);
+            strokes = new ArrayList<>();
             status.setText("Image loaded. Generate sketch.");
         } catch(Exception e) { status.setText("Unable to load image: "+e.getMessage()); }
     }
     void processImage() {
-        if(image==null) { status.setText("Select an image first"); return; }
-        int w=image.getWidth(),h=image.getHeight(),step=detail.getProgress()+2;
-        int[] pixels=new int[w*h];
-        image.getPixels(pixels,0,w,0,0,w,h);
-        int[] gray=new int[w*h];
-        for(int i=0;i<gray.length;i++) {
-            int c=pixels[i];gray[i]=(Color.red(c)*30+Color.green(c)*59+Color.blue(c)*11)/100;
+        if (image == null) {
+            status.setText("Select an image first");
+            return;
         }
-        Bitmap result=Bitmap.createBitmap(w,h,Bitmap.Config.ARGB_8888);
-        result.eraseColor(Color.WHITE);
-        ArrayList<float[]> paths=new ArrayList<>();
-        for(int y=1;y<h-1;y+=step) {
-            ArrayList<Float> points=new ArrayList<>();
-            for(int x=1;x<w-1;x+=step) {
-                int dx=Math.abs(gray[y*w+x+1]-gray[y*w+x-1]);
-                int dy=Math.abs(gray[(y+1)*w+x]-gray[(y-1)*w+x]);
-                boolean edge=dx+dy>Math.max(30,110-detail.getProgress()*20);
-                if(edge) {
-                    result.setPixel(x,y,Color.BLACK);
-                    points.add((float)x/w);points.add((float)y/h);
-                } else if(points.size()>=4) {
-                    addPath(paths,points);points.clear();
-                } else points.clear();
+        final Bitmap selected = image;
+        final int level = detail.getProgress();
+        status.setText("Tracing connected outlines...");
+        new Thread(() -> {
+            try {
+                SketchEngine.Result result = SketchEngine.generate(selected, level);
+                runOnUiThread(() -> {
+                    if (image != selected || isFinishing()) return;
+                    sketchWidth = result.width;
+                    sketchHeight = result.height;
+                    strokes = result.strokes;
+                    preview.setImageBitmap(result.preview);
+                    status.setText("Ready: " + result.strokes.size()
+                            + " contour strokes. Choose a thin brush in Instagram for best results.");
+                });
+            } catch (Exception exception) {
+                runOnUiThread(() -> {
+                    if (!isFinishing())
+                        status.setText("Sketch processing failed: " + exception.getMessage());
+                });
             }
-            if(points.size()>=4)addPath(paths,points);
-        }
-        strokes=paths;
-        preview.setImageBitmap(result);
-        status.setText("Sketch ready: "+paths.size()+" strokes. Enable Accessibility, open floating controls, and adjust the drawing frame.");
+        }).start();
     }
-    static void addPath(ArrayList<float[]> out,ArrayList<Float> src) {
-        float[] p=new float[src.size()];
-        for(int i=0;i<p.length;i++)p[i]=src.get(i);
-        out.add(p);
-    }
+
 }
