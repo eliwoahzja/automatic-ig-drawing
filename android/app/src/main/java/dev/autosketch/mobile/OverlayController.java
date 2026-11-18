@@ -53,15 +53,19 @@ public final class OverlayController {
         void onStopRequested();
 
         void onCloseRequested();
+
+        int currentColorLayer();
+
+        void onNextColorRequested();
     }
 
-    private static final int SURFACE = 0xF016171C;
-    private static final int BORDER = 0x26FFFFFF;
-    private static final int CHIP = 0x14FFFFFF;
-    private static final int ACCENT = 0xFF7CC6FF;
-    private static final int ACCENT_SOFT = 0x337CC6FF;
+    private static final int SURFACE = 0xF3171921;
+    private static final int BORDER = 0x1FFFFFFF;
+    private static final int CHIP = 0xFF292D37;
+    private static final int ACCENT = 0xFF83BCFF;
+    private static final int ACCENT_SOFT = 0x334D96FF;
     private static final int TEXT = 0xFFF3F5F9;
-    private static final int MUTED = 0xFF9AA3B2;
+    private static final int MUTED = 0xFFA0A5B4;
     private static final int DANGER = 0xFFFF8A8A;
 
     private static final int MODE_NONE = 0;
@@ -84,6 +88,8 @@ public final class OverlayController {
     private ProgressBarView progressBar;
     private TextView settingsButtonLabel;
     private TextView previewButtonLabel;
+    private TextView colorStepLabel;
+    private TextView nextColorButton;
 
     private View miniIcon;
     private WindowManager.LayoutParams miniParams;
@@ -229,7 +235,7 @@ public final class OverlayController {
     private TextView chipButton(String text, float sizeSp, int color) {
         TextView view = label(text, sizeSp, color);
         view.setGravity(Gravity.CENTER);
-        view.setBackground(ripple(CHIP, 9));
+        view.setBackground(ripple(CHIP, 11));
         view.setPadding(dp(6), 0, dp(6), 0);
         view.setContentDescription(text);
         return view;
@@ -260,6 +266,12 @@ public final class OverlayController {
     private static void copyInto(DrawingSettings from, DrawingSettings to) {
         DrawingSettings copy = from.copy();
         to.detailLevel = copy.detailLevel;
+        to.colorDensity = copy.colorDensity;
+        to.captionText = copy.captionText;
+        to.captionXPercent = copy.captionXPercent;
+        to.captionYPercent = copy.captionYPercent;
+        to.captionSizePercent = copy.captionSizePercent;
+        to.captionReplaceOriginal = copy.captionReplaceOriginal;
         to.renderMode = copy.renderMode;
         to.noiseReduction = copy.noiseReduction;
         to.edgeSensitivity = copy.edgeSensitivity;
@@ -286,8 +298,8 @@ public final class OverlayController {
         }
         minimized = false;
         Point screen = displayPoint();
-        int width = panelWidth > 0 ? panelWidth : dp(238);
-        int height = panelHeight > 0 ? panelHeight : dp(226);
+        int width = panelWidth > 0 ? panelWidth : dp(246);
+        int height = panelHeight > 0 ? panelHeight : dp(266);
         width = clamp(width, dp(196), Math.max(dp(196), screen.x - dp(8)));
         height = clamp(height, dp(150), Math.max(dp(150), screen.y - dp(64)));
         panelWidth = width;
@@ -295,8 +307,8 @@ public final class OverlayController {
 
         LinearLayout root = new LinearLayout(context);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(9), dp(7), dp(9), dp(7));
-        GradientDrawable background = surface(SURFACE, 16, 1f, BORDER);
+        root.setPadding(dp(11), dp(9), dp(11), dp(8));
+        GradientDrawable background = surface(SURFACE, 20, 1f, BORDER);
         root.setBackground(background);
         root.setElevation(dp(10f));
 
@@ -341,7 +353,7 @@ public final class OverlayController {
         dot.setBackground(dotShape);
         header.addView(dot, new LinearLayout.LayoutParams(dp(6), dp(6)));
 
-        TextView title = label("Auto Sketch", 10.5f, TEXT);
+        TextView title = label("Auto Sketch", 11.5f, TEXT);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         title.setLetterSpacing(0.06f);
         LinearLayout.LayoutParams titleParams = new LinearLayout.LayoutParams(0, -1, 1f);
@@ -505,6 +517,17 @@ public final class OverlayController {
         LinearLayout.LayoutParams secondParams = new LinearLayout.LayoutParams(-1, dp(44));
         secondParams.topMargin = dp(4);
         page.addView(secondRow, secondParams);
+
+        LinearLayout colorRow = row();
+        colorRow.setPadding(dp(4), dp(6), dp(2), 0);
+        colorStepLabel = label("", 9.5f, MUTED);
+        colorStepLabel.setSingleLine(true);
+        colorStepLabel.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        colorRow.addView(colorStepLabel, new LinearLayout.LayoutParams(0, dp(34), 1f));
+        nextColorButton = chipButton("Next color", 9f, ACCENT);
+        nextColorButton.setOnClickListener(v -> listener.onNextColorRequested());
+        colorRow.addView(nextColorButton, new LinearLayout.LayoutParams(dp(75), dp(30)));
+        page.addView(colorRow, new LinearLayout.LayoutParams(-1, dp(40)));
         return page;
     }
 
@@ -541,13 +564,13 @@ public final class OverlayController {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setBackground(ripple(CHIP, 10));
+        box.setBackground(ripple(text.equals("Start") ? 0xFF285FA4 : CHIP, 12));
         box.setPadding(0, dp(4), 0, dp(3));
         box.setContentDescription(text);
         box.setFocusable(true);
-        TextView symbol = label(glyph, 13f, TEXT);
+        TextView symbol = label(glyph, 15f, TEXT);
         symbol.setGravity(Gravity.CENTER);
-        TextView caption = label(text, 8f, MUTED);
+        TextView caption = label(text, 8.5f, text.equals("Start") ? 0xFFE8F4FF : MUTED);
         caption.setGravity(Gravity.CENTER);
         caption.setSingleLine(true);
         box.addView(symbol, new LinearLayout.LayoutParams(-1, dp(16)));
@@ -651,6 +674,13 @@ public final class OverlayController {
                     @Override
                     public void onValue(int value, boolean reprocess) {
                         working.renderMode = value;
+                    }
+                }));
+        page.addView(sectionLabel("Color fills"));
+        page.addView(slider("Fill coverage", 15, 95, working.colorDensity, "%", true,
+                new ValueSink() {
+                    @Override public void onValue(int value, boolean reprocess) {
+                        working.colorDensity = value;
                     }
                 }));
         page.addView(sectionLabel("Detail"));
@@ -916,7 +946,7 @@ public final class OverlayController {
             settingsButtonLabel.setText(open ? "Done" : "Settings");
         }
         if (open && panelParams != null) {
-            int wanted = Math.max(panelParams.height, dp(300));
+            int wanted = Math.max(panelParams.height, dp(350));
             int maxHeight = Math.max(dp(150), screenHeight() - panelParams.y - dp(6));
             panelParams.height = Math.min(wanted, maxHeight);
             try {
@@ -965,6 +995,14 @@ public final class OverlayController {
                 text = listener.sketch().isEmpty() ? "No sketch yet" : "Ready";
                 break;
         }
+        if (state == DrawingController.State.COMPLETED &&
+                listener.sketch() != null && !listener.sketch().colorLayers.isEmpty()) {
+            int step = clamp(listener.currentColorLayer(), 0,
+                    listener.sketch().colorLayers.size() - 1);
+            text = step < listener.sketch().colorLayers.size() - 1
+                    ? "Layer done · change brush, tap Next color"
+                    : "All color layers completed";
+        }
         if (overrideStatus != null && (state == DrawingController.State.IDLE
                 || state == DrawingController.State.READY
                 || state == DrawingController.State.PROCESSING)) {
@@ -987,6 +1025,25 @@ public final class OverlayController {
                 dimsText.setText(Math.round(area.width()) + "×" + Math.round(area.height())
                         + " · " + DrawingSettings.FIT_NAMES[clamp(settings.fitMode, 0, 2)]);
             }
+        }
+        Sketch sketch = listener.sketch();
+        boolean hasColors = sketch != null && !sketch.colorLayers.isEmpty();
+        int currentColor = hasColors ? clamp(listener.currentColorLayer(), 0,
+                sketch.colorLayers.size() - 1) : 0;
+        if (colorStepLabel != null) {
+            colorStepLabel.setVisibility(hasColors ? View.VISIBLE : View.GONE);
+            if (hasColors) {
+                ColorLayer layer = sketch.colorLayers.get(currentColor);
+                colorStepLabel.setText((currentColor + 1) + "/" + sketch.colorLayers.size()
+                        + " · " + layer.name);
+            }
+        }
+        if (nextColorButton != null) {
+            nextColorButton.setVisibility(hasColors ? View.VISIBLE : View.GONE);
+            nextColorButton.setEnabled(hasColors &&
+                    controller.getState() == DrawingController.State.COMPLETED &&
+                    currentColor < sketch.colorLayers.size() - 1);
+            nextColorButton.setAlpha(nextColorButton.isEnabled() ? 1f : .35f);
         }
         if (miniView != null) {
             miniView.setProgress(progress);

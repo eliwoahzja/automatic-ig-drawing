@@ -14,6 +14,9 @@ import android.provider.Settings;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.LinearLayout;
+import android.widget.EditText;
+import android.widget.SeekBar;
+import android.text.InputType;
 import android.widget.ScrollView;
 import android.widget.TextView;
 import java.io.InputStream;
@@ -23,13 +26,13 @@ public class MainActivity extends Activity {
 
     private static final int REQUEST_IMAGE = 1;
 
-    private static final int SURFACE = 0xFF12131A;
-    private static final int CARD = 0xFF171922;
-    private static final int CHIP = 0x14FFFFFF;
-    private static final int ACCENT = 0xFF7CC6FF;
-    private static final int ACCENT_SOFT = 0x337CC6FF;
+    private static final int SURFACE = 0xFF101218;
+    private static final int CARD = 0xFF1B1E27;
+    private static final int CHIP = 0xFF222630;
+    private static final int ACCENT = 0xFF81BFFF;
+    private static final int ACCENT_SOFT = 0x334B9EFF;
     private static final int TEXT = 0xFFF3F5F9;
-    private static final int MUTED = 0xFF9AA3B2;
+    private static final int MUTED = 0xFFA0A4B3;
 
     private SketchPreviewView preview;
     private TextView status;
@@ -37,6 +40,7 @@ public class MainActivity extends Activity {
     private TextView accessibilityState;
     private TextView generateButton;
     private TextView centerToggle;
+    private EditText captionInput;
     private LinearLayout modeChips;
     private LinearLayout detailChips;
     private LinearLayout fitChips;
@@ -67,7 +71,8 @@ public class MainActivity extends Activity {
         if (sketch.isEmpty()) {
             meta.setText(source == null ? "No image loaded" : "Image ready · not traced yet");
         } else {
-            meta.setText(sketch.strokes.size() + " strokes · " + sketch.edgePixels + " edge pixels");
+            meta.setText(sketch.strokes.size() + " contours · " + sketch.colorLayers.size()
+                    + " color layers · " + sketch.edgePixels + " edge pixels");
         }
     }
 
@@ -75,23 +80,23 @@ public class MainActivity extends Activity {
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(0xFF0B0C10);
+        scroll.setBackgroundColor(0xFF090B10);
         scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(22), dp(18), dp(26));
+        root.setPadding(dp(18), dp(26), dp(18), dp(34));
         scroll.addView(root);
 
-        TextView title = label("Auto Sketch", 26f, TEXT);
+        TextView title = label("Auto Sketch", 30f, TEXT);
         title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         root.addView(title);
-        TextView subtitle = label("Trace any image onto the Instagram canvas or any drawing app.",
-                11.5f, MUTED);
-        subtitle.setPadding(0, dp(4), 0, dp(16));
+        TextView subtitle = label("Turn images into clean strokes and color layers.",
+                12.5f, MUTED);
+        subtitle.setPadding(0, dp(8), 0, dp(22));
         root.addView(subtitle);
 
         preview = new SketchPreviewView(this);
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(300));
+        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(336));
         root.addView(preview, previewParams);
 
         LinearLayout sourceRow = new LinearLayout(this);
@@ -127,14 +132,24 @@ public class MainActivity extends Activity {
         root.addView(section("Render mode"));
         modeChips = segmented(DrawingSettings.MODE_NAMES, settings.renderMode, 2);
         root.addView(modeChips);
-        TextView modeHint = label("Sketch: outlines · Clean: fewer, stronger lines · "
-                + "Full: outlines plus tonal hatching (use a thin brush)", 9.5f, 0x77FFFFFF);
+        TextView modeHint = label("Color uses guided brush changes. Trace fills first, then outlines.", 10f, MUTED);
         modeHint.setPadding(0, dp(6), 0, 0);
         root.addView(modeHint);
 
         root.addView(section("Detail level"));
         detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, 0);
         root.addView(detailChips);
+
+        root.addView(section("Color coverage"));
+        TextView colorHint = label("Select Color mode, generate again, then choose each brush color as prompted.",
+                10.5f, MUTED);
+        colorHint.setPadding(0, 0, 0, dp(5));
+        root.addView(colorHint);
+        root.addView(settingSlider("Fill density", 15, 95, settings.colorDensity, new SettingValue() {
+            @Override public void changed(int value) {
+                settings.colorDensity = value;
+            }
+        }));
 
         root.addView(section("Canvas fit"));
         fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, 1);
@@ -149,7 +164,53 @@ public class MainActivity extends Activity {
                 persist(true);
             }
         });
-        root.addView(centerToggle, new LinearLayout.LayoutParams(-1, dp(38)));
+        root.addView(centerToggle, new LinearLayout.LayoutParams(-1, dp(42)));
+
+        root.addView(section("Readable lettering"));
+        TextView letteringHint = label("Type the words exactly to replace distorted lettering. Set the position in the image, then regenerate.",
+                10.5f, MUTED);
+        letteringHint.setPadding(0, 0, 0, dp(8));
+        letteringHint.setLineSpacing(dp(3), 1f);
+        root.addView(letteringHint);
+        captionInput = new EditText(this);
+        captionInput.setSingleLine(false);
+        captionInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        captionInput.setText(settings.captionText);
+        captionInput.setTextColor(TEXT);
+        captionInput.setHintTextColor(MUTED);
+        captionInput.setHint("Optional text, including line breaks");
+        captionInput.setTextSize(13f);
+        captionInput.setPadding(dp(14), dp(12), dp(14), dp(12));
+        captionInput.setBackground(surface(CARD, 16, 1f, 0x22FFFFFF));
+        root.addView(captionInput, new LinearLayout.LayoutParams(-1, dp(90)));
+        root.addView(settingSlider("Text position X", 10, 90, settings.captionXPercent, new SettingValue() {
+            @Override public void changed(int value) {
+                settings.captionXPercent = value;
+            }
+        }));
+        root.addView(settingSlider("Text position Y", 10, 90, settings.captionYPercent, new SettingValue() {
+            @Override public void changed(int value) {
+                settings.captionYPercent = value;
+            }
+        }));
+        root.addView(settingSlider("Text size", 3, 18, settings.captionSizePercent, new SettingValue() {
+            @Override public void changed(int value) {
+                settings.captionSizePercent = value;
+            }
+        }));
+        TextView applyText = pill("Apply lettering + regenerate", false, false);
+        LinearLayout.LayoutParams applyParams = new LinearLayout.LayoutParams(-1, dp(48));
+        applyParams.topMargin = dp(8);
+        root.addView(applyText, applyParams);
+        applyText.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View v) {
+                settings.captionText = captionInput.getText().toString();
+                persist(true);
+                generate();
+            }
+        });
 
         root.addView(section("Automation"));
         LinearLayout automationRow = new LinearLayout(this);
@@ -192,6 +253,42 @@ public class MainActivity extends Activity {
         setContentView(scroll);
     }
 
+    private interface SettingValue {
+        void changed(int value);
+    }
+
+    private View settingSlider(String title, int min, int max, int value,
+                               final SettingValue callback) {
+        LinearLayout block = new LinearLayout(this);
+        block.setOrientation(LinearLayout.VERTICAL);
+        block.setPadding(0, dp(5), 0, dp(3));
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = label(title, 12f, MUTED);
+        row.addView(name, new LinearLayout.LayoutParams(0, dp(22), 1f));
+        final TextView number = label(String.valueOf(value), 12f, TEXT);
+        row.addView(number);
+        block.addView(row);
+        SeekBar slider = new SeekBar(this);
+        slider.setMin(min);
+        slider.setMax(max);
+        slider.setProgress(value);
+        slider.setProgressTintList(ColorStateList.valueOf(ACCENT));
+        slider.setThumbTintList(ColorStateList.valueOf(ACCENT));
+        slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
+            @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
+                if (!fromUser) return;
+                number.setText(String.valueOf(progress));
+                callback.changed(progress);
+                persist(true);
+            }
+            @Override public void onStartTrackingTouch(SeekBar bar) {}
+            @Override public void onStopTrackingTouch(SeekBar bar) {}
+        });
+        block.addView(slider, new LinearLayout.LayoutParams(-1, dp(35)));
+        return block;
+    }
+
     private LinearLayout.LayoutParams weighted(int margin) {
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1f);
         params.leftMargin = margin / 2;
@@ -209,9 +306,9 @@ public class MainActivity extends Activity {
     }
 
     private TextView section(String text) {
-        TextView view = label(text.toUpperCase(), 9f, 0x88FFFFFF);
+        TextView view = label(text.toUpperCase(), 10f, MUTED);
         view.setLetterSpacing(0.12f);
-        view.setPadding(0, dp(18), 0, dp(8));
+        view.setPadding(0, dp(22), 0, dp(10));
         return view;
     }
 
@@ -232,13 +329,13 @@ public class MainActivity extends Activity {
     }
 
     private TextView pill(String text, boolean primary, boolean compact) {
-        TextView view = label(text, compact ? 10.5f : 11.5f, primary ? 0xFF06131F : TEXT);
+        TextView view = label(text, compact ? 12f : 12.5f, primary ? 0xFF06131F : TEXT);
         view.setGravity(Gravity.CENTER);
         view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
         if (primary) {
-            view.setBackground(ripple(ACCENT, 12));
+            view.setBackground(ripple(ACCENT, 16));
         } else {
-            view.setBackground(ripple(CHIP, 12));
+            view.setBackground(ripple(CHIP, 16));
             view.setTextColor(TEXT);
         }
         return view;
@@ -250,9 +347,9 @@ public class MainActivity extends Activity {
         row.setPadding(0, dp(2), 0, dp(2));
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
-            TextView chip = label(labels[i], 10.5f, MUTED);
+            TextView chip = label(labels[i], 11.5f, MUTED);
             chip.setGravity(Gravity.CENTER);
-            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1f);
             params.leftMargin = i == 0 ? 0 : dp(3);
             row.addView(chip, params);
             chip.setOnClickListener(new View.OnClickListener() {
@@ -281,8 +378,8 @@ public class MainActivity extends Activity {
             TextView chip = (TextView) row.getChildAt(i);
             boolean active = i == selected;
             chip.setTextColor(active ? ACCENT : MUTED);
-            chip.setBackground(active ? surface(ACCENT_SOFT, 11, 1f, 0x557CC6FF)
-                    : ripple(CHIP, 11));
+            chip.setBackground(active ? surface(ACCENT_SOFT, 13, 1f, 0x5562B0FF)
+                    : ripple(CHIP, 13));
         }
     }
 
@@ -434,6 +531,8 @@ public class MainActivity extends Activity {
         settings = SettingsStore.load(this);
         SketchSession.updateSettings(settings);
         source = SketchSession.source();
+        if (captionInput != null && !captionInput.hasFocus())
+            captionInput.setText(settings.captionText);
         styleSegments(modeChips, settings.renderMode);
         styleSegments(detailChips, settings.detailLevel);
         styleSegments(fitChips, settings.fitMode);

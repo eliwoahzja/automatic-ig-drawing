@@ -16,12 +16,19 @@ public final class Sketch {
     /** Flat x,y pairs per stroke, values in 0..1. Ordered for drawing. */
     public final List<float[]> strokes;
     public final int edgePixels;
+    public final List<ColorLayer> colorLayers;
 
     Sketch(int width, int height, ArrayList<float[]> strokes, int edgePixels) {
+        this(width, height, strokes, edgePixels, new ArrayList<ColorLayer>());
+    }
+
+    Sketch(int width, int height, ArrayList<float[]> strokes, int edgePixels,
+           List<ColorLayer> layers) {
         this.width = Math.max(1, width);
         this.height = Math.max(1, height);
         this.strokes = Collections.unmodifiableList(new ArrayList<>(strokes));
         this.edgePixels = edgePixels;
+        this.colorLayers = Collections.unmodifiableList(new ArrayList<>(layers));
     }
 
     public static Sketch empty() {

@@ -87,19 +87,17 @@ public final class SketchPreviewView extends View {
                     imagePaint);
         }
         if (sketch != null && !sketch.isEmpty()) {
-            ArrayList<float[]> mapped = CanvasMapper.mapStrokes(sketch.strokes, area,
-                    sketch.width, sketch.height, settings);
-            Path path = new Path();
-            for (float[] stroke : mapped) {
-                if (stroke.length < 4) {
-                    continue;
+            if (settings.renderMode == DrawingSettings.MODE_COLOR &&
+                    !sketch.colorLayers.isEmpty()) {
+                for (ColorLayer layer : sketch.colorLayers) {
+                    strokePaint.setColor(layer.color);
+                    renderStrokes(canvas, CanvasMapper.mapStrokes(layer.strokes, area,
+                            sketch.width, sketch.height, settings));
                 }
-                path.reset();
-                path.moveTo(stroke[0], stroke[1]);
-                for (int i = 2; i + 1 < stroke.length; i += 2) {
-                    path.lineTo(stroke[i], stroke[i + 1]);
-                }
-                canvas.drawPath(path, strokePaint);
+            } else {
+                strokePaint.setColor(0xFFF2F4F8);
+                renderStrokes(canvas, CanvasMapper.mapStrokes(sketch.strokes, area,
+                        sketch.width, sketch.height, settings));
             }
         } else {
             String text = source == null ? "Choose an image to begin" : "Tap Generate sketch";
@@ -110,4 +108,17 @@ public final class SketchPreviewView extends View {
         canvas.restore();
         canvas.drawRoundRect(rect, radius, radius, borderPaint);
     }
+    private void renderStrokes(Canvas canvas, ArrayList<float[]> mapped) {
+        Path path = new Path();
+        for (float[] stroke : mapped) {
+            if (stroke.length < 4) continue;
+            path.reset();
+            path.moveTo(stroke[0], stroke[1]);
+            for (int i = 2; i + 1 < stroke.length; i += 2) {
+                path.lineTo(stroke[i], stroke[i + 1]);
+            }
+            canvas.drawPath(path, strokePaint);
+        }
+    }
+
 }

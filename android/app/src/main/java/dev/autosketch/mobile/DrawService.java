@@ -29,6 +29,7 @@ public class DrawService extends AccessibilityService
     private CanvasMapper.Rect bounds;
     private ExecutorService worker;
     private SketchSession.Token processToken;
+    private int currentColorLayer = 0;
 
     @Override
     protected void onServiceConnected() {
@@ -140,6 +141,29 @@ public class DrawService extends AccessibilityService
     }
 
     @Override
+    public int currentColorLayer() {
+        return currentColorLayer;
+    }
+
+    @Override
+    public void onNextColorRequested() {
+        Sketch sketch = SketchSession.sketch();
+        if (sketch.colorLayers.isEmpty()) return;
+        if (controller == null || controller.getState() != DrawingController.State.COMPLETED) {
+            overlay.setStatus("Finish this color before continuing");
+            return;
+        }
+        if (currentColorLayer >= sketch.colorLayers.size() - 1) {
+            overlay.setStatus("All color layers complete");
+            return;
+        }
+        currentColorLayer++;
+        syncPlan();
+        overlay.setStatus("Choose " + sketch.colorLayers.get(currentColorLayer).name
+                + " brush in Instagram, then press Start");
+    }
+
+    @Override
     public DrawingSettings settings() {
         return SketchSession.settings();
     }
@@ -154,6 +178,7 @@ public class DrawService extends AccessibilityService
         SketchSession.updateSettings(settings);
         SettingsStore.save(this, settings);
         if (needsReprocessing) {
+            currentColorLayer = 0;
             reprocess();
             return;
         }
@@ -168,6 +193,7 @@ public class DrawService extends AccessibilityService
     @Override
     public void onAreaConfirmed(CanvasMapper.Rect area) {
         bounds = area;
+        currentColorLayer = 0;
         if (controller != null && controller.isBusy()) {
             controller.stop();
         }
@@ -190,7 +216,16 @@ public class DrawService extends AccessibilityService
             overlay.setStatus("Generate a sketch in Auto Sketch");
             return;
         }
-        if (!controller.isBusy()) {
+        Sketch sketch = SketchSession.sketch();
+        if (!sketch.colorLayers.isEmpty() &&
+                controller.getState() == DrawingController.State.COMPLETED) {
+            overlay.setStatus(currentColorLayer < sketch.colorLayers.size() - 1
+                    ? "Tap Next color, change brush, then Start"
+                    : "All layers complete. Reselect area to restart.");
+            return;
+        }
+        if (!controller.isBusy() &&
+                controller.getState() != DrawingController.State.READY) {
             syncPlan();
         }
         controller.start();
@@ -237,7 +272,13 @@ public class DrawService extends AccessibilityService
             controller.setStrokes(new ArrayList<float[]>(), settings);
             return;
         }
-        ArrayList<float[]> mapped = CanvasMapper.mapStrokes(sketch.strokes, bounds,
+        java.util.List<float[]> input = sketch.strokes;
+        if (settings.renderMode == DrawingSettings.MODE_COLOR &&
+                !sketch.colorLayers.isEmpty()) {
+            currentColorLayer = Math.min(currentColorLayer, sketch.colorLayers.size() - 1);
+            input = sketch.colorLayers.get(currentColorLayer).strokes;
+        }
+        ArrayList<float[]> mapped = CanvasMapper.mapStrokes(input, bounds,
                 sketch.width, sketch.height, settings);
         controller.setStrokes(mapped, settings);
     }
@@ -284,6 +325,7 @@ public class DrawService extends AccessibilityService
                             return;
                         }
                         SketchSession.setSketch(outcome.sketch);
+                        currentColorLayer = 0;
                         if (bounds != null) {
                             syncPlan();
                         }

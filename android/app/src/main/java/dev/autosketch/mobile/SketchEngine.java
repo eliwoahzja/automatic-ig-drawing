@@ -159,7 +159,14 @@ public final class SketchEngine {
             return Sketch.empty();
         }
 
-        return new Sketch(width, height, normalize(cleaned, width, height), edgePixels);
+        ArrayList<float[]> normalized = normalize(cleaned, width, height);
+        if (config.renderMode == DrawingSettings.MODE_COLOR) {
+            ArrayList<ColorLayer> colors = ColorPlanner.generate(argb, width, height,
+                    normalized, config.colorDensity, cancel);
+            if (cancel.isCancelled()) return Sketch.empty();
+            return new Sketch(width, height, normalized, edgePixels, colors);
+        }
+        return new Sketch(width, height, normalized, edgePixels);
     }
 
     /**

@@ -21,10 +21,11 @@ public final class DrawingSettings {
     public static final int MODE_CLEAN = 1;
     /** Full drawing: cleaned outlines plus tonal cross-hatching for shading. */
     public static final int MODE_FULL = 2;
+    public static final int MODE_COLOR = 3;
 
     public static final String[] DETAIL_NAMES = {"Low", "Medium", "High", "Ultra"};
     public static final String[] FIT_NAMES = {"Contain", "Fill", "Stretch"};
-    public static final String[] MODE_NAMES = {"Sketch", "Clean", "Full"};
+    public static final String[] MODE_NAMES = {"Sketch", "Clean", "Full", "Color"};
 
     /** 0..3, see DETAIL_*. */
     public int detailLevel = DETAIL_HIGH;
@@ -61,6 +62,13 @@ public final class DrawingSettings {
     /** Minimum pause between two strokes, keeps apps responsive. */
     public int strokeGapMs = 24;
 
+    public int colorDensity = 55;
+    public String captionText = "";
+    public int captionXPercent = 65;
+    public int captionYPercent = 40;
+    public int captionSizePercent = 9;
+    public boolean captionReplaceOriginal = true;
+
     public int fitMode = FIT_CONTAIN;
     public boolean centerImage = true;
     public boolean showProgressPreview = false;
@@ -86,6 +94,12 @@ public final class DrawingSettings {
         other.maxStrokeDurationMs = maxStrokeDurationMs;
         other.drawingSpeedPxPerSec = drawingSpeedPxPerSec;
         other.strokeGapMs = strokeGapMs;
+        other.colorDensity = colorDensity;
+        other.captionText = captionText;
+        other.captionXPercent = captionXPercent;
+        other.captionYPercent = captionYPercent;
+        other.captionSizePercent = captionSizePercent;
+        other.captionReplaceOriginal = captionReplaceOriginal;
         other.fitMode = fitMode;
         other.centerImage = centerImage;
         other.showProgressPreview = showProgressPreview;
@@ -135,6 +149,9 @@ public final class DrawingSettings {
         if (renderMode == MODE_FULL) {
             return Math.round(base * 1.35f);
         }
+        if (renderMode == MODE_COLOR) {
+            return Math.max(90, Math.round(base * .75f));
+        }
         if (renderMode == MODE_CLEAN) {
             return Math.max(60, Math.round(base * 0.65f));
         }
@@ -174,6 +191,8 @@ public final class DrawingSettings {
         }
         if (renderMode == MODE_CLEAN) {
             base *= 1.3f;
+        } else if (renderMode == MODE_COLOR) {
+            base *= 1.12f;
         } else if (renderMode == MODE_FULL) {
             base *= 1.1f;
         }

@@ -49,6 +49,9 @@ public final class SketchProcessor {
                             return token.isCancelled();
                         }
                     });
+            if (token == null || !token.isCancelled()) {
+                sketch = LetteringComposer.apply(sketch, settings);
+            }
             boolean cancelled = token != null && token.isCancelled();
             return new Outcome(sketch, SystemClock.uptimeMillis() - started, cancelled);
         } finally {
