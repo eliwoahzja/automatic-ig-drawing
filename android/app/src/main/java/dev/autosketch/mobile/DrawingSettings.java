@@ -62,6 +62,7 @@ public final class DrawingSettings {
     /** Minimum pause between two strokes, keeps apps responsive. */
     public int strokeGapMs = 24;
 
+    public String aiEndpointUrl = "";
     public int colorDensity = 55;
     public String captionText = "";
     public int captionXPercent = 65;
@@ -94,6 +95,7 @@ public final class DrawingSettings {
         other.maxStrokeDurationMs = maxStrokeDurationMs;
         other.drawingSpeedPxPerSec = drawingSpeedPxPerSec;
         other.strokeGapMs = strokeGapMs;
+        other.aiEndpointUrl = aiEndpointUrl;
         other.colorDensity = colorDensity;
         other.captionText = captionText;
         other.captionXPercent = captionXPercent;

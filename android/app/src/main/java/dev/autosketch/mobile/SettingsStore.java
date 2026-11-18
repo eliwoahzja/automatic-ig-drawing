@@ -28,6 +28,7 @@ public final class SettingsStore {
         settings.detailLevel = prefs.getInt("detail", settings.detailLevel);
         settings.renderMode = prefs.getInt("render_mode", settings.renderMode);
         settings.colorDensity = prefs.getInt("color_density", settings.colorDensity);
+        settings.aiEndpointUrl = prefs.getString("ai_endpoint_url", "");
         settings.captionText = prefs.getString("caption", settings.captionText);
         settings.captionXPercent = prefs.getInt("caption_x", settings.captionXPercent);
         settings.captionYPercent = prefs.getInt("caption_y", settings.captionYPercent);
@@ -57,6 +58,7 @@ public final class SettingsStore {
                 .putInt("detail", settings.detailLevel)
                 .putInt("render_mode", settings.renderMode)
                 .putInt("color_density", settings.colorDensity)
+                .putString("ai_endpoint_url", settings.aiEndpointUrl)
                 .putString("caption", settings.captionText)
                 .putInt("caption_x", settings.captionXPercent)
                 .putInt("caption_y", settings.captionYPercent)

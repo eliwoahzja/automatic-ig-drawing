@@ -41,6 +41,9 @@ public class MainActivity extends Activity {
     private TextView generateButton;
     private TextView centerToggle;
     private EditText captionInput;
+    private EditText aiEndpointInput;
+    private EditText aiAccessInput;
+    private boolean aiBusy;
     private LinearLayout modeChips;
     private LinearLayout detailChips;
     private LinearLayout fitChips;
@@ -121,6 +124,23 @@ public class MainActivity extends Activity {
         });
         sourceRow.addView(generateButton, weighted(dp(6)));
         root.addView(sourceRow);
+
+        LinearLayout aiRow = new LinearLayout(this);
+        aiRow.setOrientation(LinearLayout.HORIZONTAL);
+        aiRow.setPadding(0, dp(10), 0, 0);
+        TextView enhance = pill("AI Enhance", false, false);
+        enhance.setContentDescription("Improve details using on-device vision models");
+        enhance.setOnClickListener(v -> enhanceWithAi());
+        aiRow.addView(enhance, weighted(dp(6)));
+        TextView aiDraw = pill("AI Draw", false, false);
+        aiDraw.setContentDescription("Generate extra paths using a connected AI drawer server");
+        aiDraw.setOnClickListener(v -> drawWithAi());
+        aiRow.addView(aiDraw, weighted(dp(6)));
+        root.addView(aiRow);
+        TextView aiHint = label("AI Enhance works on-device. AI Draw uses your optional private server.",
+                10f, MUTED);
+        aiHint.setPadding(0, dp(6), 0, 0);
+        root.addView(aiHint);
 
         status = label("Choose an image to begin", 11f, MUTED);
         status.setPadding(0, dp(12), 0, 0);
@@ -232,6 +252,36 @@ public class MainActivity extends Activity {
                 generate();
             }
         });
+
+        advanced.addView(section("AI Drawer server"));
+        TextView apiHint = label("Optional HTTPS endpoint. Only AI Draw uploads an image. Never enter an OpenAI API key here.",
+                10.5f, MUTED);
+        apiHint.setPadding(0, 0, 0, dp(8));
+        advanced.addView(apiHint);
+        aiEndpointInput = new EditText(this);
+        aiEndpointInput.setSingleLine(true);
+        aiEndpointInput.setText(settings.aiEndpointUrl);
+        aiEndpointInput.setHint("https://your-server.vercel.app/api/ai-draw");
+        aiEndpointInput.setTextColor(TEXT);
+        aiEndpointInput.setHintTextColor(MUTED);
+        aiEndpointInput.setTextSize(12f);
+        aiEndpointInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
+        aiEndpointInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        aiEndpointInput.setBackground(surface(CARD, 14, 1f, 0x22FFFFFF));
+        advanced.addView(aiEndpointInput, new LinearLayout.LayoutParams(-1, dp(52)));
+        aiAccessInput = new EditText(this);
+        aiAccessInput.setSingleLine(true);
+        aiAccessInput.setHint("Private backend access token (optional)");
+        aiAccessInput.setTextColor(TEXT);
+        aiAccessInput.setHintTextColor(MUTED);
+        aiAccessInput.setInputType(InputType.TYPE_CLASS_TEXT |
+                InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        aiAccessInput.setTextSize(12f);
+        aiAccessInput.setPadding(dp(12), dp(10), dp(12), dp(10));
+        aiAccessInput.setBackground(surface(CARD, 14, 1f, 0x22FFFFFF));
+        LinearLayout.LayoutParams privateParams = new LinearLayout.LayoutParams(-1, dp(52));
+        privateParams.topMargin = dp(8);
+        advanced.addView(aiAccessInput, privateParams);
 
         root.addView(section("Automation"));
         LinearLayout automationRow = new LinearLayout(this);
@@ -456,6 +506,7 @@ public class MainActivity extends Activity {
             }
             source = prepared;
             SketchSession.setSketch(Sketch.empty());
+            aiBusy = false;
             preview.setSource(source);
             preview.setSketch(Sketch.empty(), settings);
             status.setText("Image loaded · tap Generate sketch");
@@ -518,6 +569,99 @@ public class MainActivity extends Activity {
                 });
             }
         }, "sketch-process").start();
+    }
+
+    private void enhanceWithAi() {
+        if (source == null || source.isRecycled()) {
+            status.setText("Choose an image first");
+            return;
+        }
+        final Sketch baseline = SketchSession.sketch();
+        if (baseline == null || baseline.isEmpty()) {
+            status.setText("Generate the base sketch first");
+            return;
+        }
+        if (aiBusy) return;
+        aiBusy = true;
+        final Bitmap requested = source;
+        status.setText("AI processor: recognizing text and important objects…");
+        AiVisionProcessor.analyze(requested, scene -> {
+            if (source != requested || isFinishing() || isDestroyed()) {
+                aiBusy = false;
+                return;
+            }
+            status.setText("AI processor: recovering fine contours…");
+            final DrawingSettings snapshot = settings.copy();
+            final SketchSession.Token workToken = new SketchSession.Token();
+            new Thread(() -> {
+                try {
+                    Sketch result = AiGuidedSketch.enhance(requested, baseline,
+                            scene, snapshot, workToken);
+                    runOnUiThread(() -> {
+                        if (source != requested || isFinishing() || isDestroyed()) return;
+                        aiBusy = false;
+                        SketchSession.setSketch(result);
+                        preview.setSketch(result, settings);
+                        meta.setText(result.strokes.size() + " strokes · " +
+                                scene.objects.size() + " object regions · " +
+                                scene.lettering.size() + " text regions");
+                        if (scene.lettering.size() > 0 && captionInput != null
+                                && captionInput.length() == 0) {
+                            captionInput.setText(scene.recognizedWords());
+                        }
+                        status.setText("AI Enhanced · inspect text in the preview before drawing");
+                    });
+                } catch (Exception e) {
+                    runOnUiThread(() -> {
+                        aiBusy = false;
+                        status.setText("AI processing failed: " + e.getMessage());
+                    });
+                }
+            }, "ai-contour-refinement").start();
+        });
+    }
+
+    private void drawWithAi() {
+        if (source == null || source.isRecycled()) {
+            status.setText("Choose an image first");
+            return;
+        }
+        if (aiBusy) return;
+        String endpoint = aiEndpointInput == null
+                ? settings.aiEndpointUrl : aiEndpointInput.getText().toString().trim();
+        if (!endpoint.startsWith("https://")) {
+            status.setText("AI Draw needs your private HTTPS server URL in Adjustments");
+            return;
+        }
+        String access = aiAccessInput == null ? ""
+                : aiAccessInput.getText().toString();
+        if (!endpoint.equals(settings.aiEndpointUrl)) {
+            settings.aiEndpointUrl = endpoint;
+            persist(false);
+        }
+        final Bitmap requested = source;
+        final Sketch original = SketchSession.sketch();
+        aiBusy = true;
+        status.setText("AI drawer: creating semantic drawing paths…");
+        AiDrawerClient.generate(requested, original, endpoint, access,
+                new AiDrawerClient.Callback() {
+                    @Override public void complete(Sketch sketch, String description,
+                                                   String error) {
+                        runOnUiThread(() -> {
+                            if (source != requested || isFinishing() || isDestroyed()) return;
+                            aiBusy = false;
+                            if (sketch == null) {
+                                status.setText("AI Draw unavailable: " + error);
+                                return;
+                            }
+                            SketchSession.setSketch(sketch);
+                            preview.setSketch(sketch, settings);
+                            meta.setText(sketch.strokes.size() + " AI-guided contours");
+                            status.setText("AI Draw: " + description +
+                                    " · review preview before tracing");
+                        });
+                    }
+                });
     }
 
     private void openFloatingControls() {
