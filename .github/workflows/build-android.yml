@@ -1,10 +1,12 @@
 name: Build Android APK
+
 on:
   workflow_dispatch:
   push:
     paths:
       - 'android/**'
       - '.github/workflows/build-android.yml'
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -25,9 +27,19 @@ jobs:
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -1)"
           test -n "$SDKMANAGER"
           "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --install 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Unit tests (pipeline, tracing, mapping, stroke continuity)
+        run: gradle testDebugUnitTest --stacktrace
+        working-directory: android
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
         working-directory: android
+      - name: Upload unit test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-report
+          path: android/app/build/reports/tests/testDebugUnitTest
+          if-no-files-found: warn
       - uses: actions/upload-artifact@v4
         if: success()
         with:

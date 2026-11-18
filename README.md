@@ -1,6 +1,12 @@
 # Auto Sketch Drawer
 
-An automated drawing tool that converts images into edge-based sketches and draws them on any canvas application using mouse automation.
+An automated drawing tool that converts images into edge-based sketches and draws them on any canvas application — on the desktop with mouse automation, or on Android with accessibility gestures.
+
+## Android app
+
+The Android version lives in [`android/`](android) and is built from a full computer-vision pipeline (grayscale, Gaussian smoothing, Canny with non-maximum suppression and hysteresis, despeckling, Zhang-Suen thinning, ordered contour tracing, Douglas-Peucker simplification, stroke ordering and continuous gesture chunks). It draws through Instagram's drawing canvas without root or APK modification.
+
+See [android/README.md](android/README.md) for install steps, the floating control panel, drawing settings and the debug APK workflow. The Python desktop implementation below is unchanged.
 
 ## Features
 

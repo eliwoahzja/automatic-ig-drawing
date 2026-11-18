@@ -1,0 +1,222 @@
+package dev.autosketch.mobile;
+
+/**
+ * Every knobs the sketch pipeline and the gesture mapper use. Pure Java so the
+ * pipeline can be verified in JVM unit tests.
+ */
+public final class DrawingSettings {
+
+    public static final int DETAIL_LOW = 0;
+    public static final int DETAIL_MEDIUM = 1;
+    public static final int DETAIL_HIGH = 2;
+    public static final int DETAIL_ULTRA = 3;
+
+    public static final int FIT_CONTAIN = 0;
+    public static final int FIT_FILL = 1;
+    public static final int FIT_STRETCH = 2;
+
+    public static final String[] DETAIL_NAMES = {"Low", "Medium", "High", "Ultra"};
+    public static final String[] FIT_NAMES = {"Contain", "Fill", "Stretch"};
+
+    /** 0..3, see DETAIL_*. */
+    public int detailLevel = DETAIL_HIGH;
+
+    /** 0..100, drives the Gaussian sigma before edge detection. */
+    public int noiseReduction = 40;
+    /** 0..100, higher keeps weaker edges (more detail, more noise). */
+    public int edgeSensitivity = 55;
+    /** -100..100. */
+    public int contrast = 0;
+    /** -100..100. */
+    public int brightness = 0;
+    public boolean invert = false;
+    /** 0..100, flattens light backgrounds so paper/texture noise disappears. */
+    public int backgroundSuppression = 22;
+
+    /** 0..100, corner rounding of traced polylines. */
+    public int smoothing = 30;
+    /** 0..100, Douglas-Peucker tolerance. */
+    public int simplification = 30;
+    /** 0..100, duplicate/overlapping stroke rejection. */
+    public int strokeOverlapReduction = 45;
+
+    /** Screen pixels between resampled gesture points. */
+    public int pointSpacingPx = 3;
+    /** Screen pixels; shorter strokes are dropped so no dots are drawn. */
+    public int minStrokeLengthPx = 8;
+    /** Hard cap for one dispatched gesture stroke. */
+    public int maxStrokeDurationMs = 2400;
+    /** Screen pixels per second while a stroke is drawn. */
+    public int drawingSpeedPxPerSec = 520;
+    /** Minimum pause between two strokes, keeps apps responsive. */
+    public int strokeGapMs = 24;
+
+    public int fitMode = FIT_CONTAIN;
+    public boolean centerImage = true;
+    public boolean showProgressPreview = false;
+
+    public DrawingSettings() {
+    }
+
+    public DrawingSettings copy() {
+        DrawingSettings other = new DrawingSettings();
+        other.detailLevel = detailLevel;
+        other.noiseReduction = noiseReduction;
+        other.edgeSensitivity = edgeSensitivity;
+        other.contrast = contrast;
+        other.brightness = brightness;
+        other.invert = invert;
+        other.backgroundSuppression = backgroundSuppression;
+        other.smoothing = smoothing;
+        other.simplification = simplification;
+        other.strokeOverlapReduction = strokeOverlapReduction;
+        other.pointSpacingPx = pointSpacingPx;
+        other.minStrokeLengthPx = minStrokeLengthPx;
+        other.maxStrokeDurationMs = maxStrokeDurationMs;
+        other.drawingSpeedPxPerSec = drawingSpeedPxPerSec;
+        other.strokeGapMs = strokeGapMs;
+        other.fitMode = fitMode;
+        other.centerImage = centerImage;
+        other.showProgressPreview = showProgressPreview;
+        return other;
+    }
+
+    static int clamp(int value, int min, int max) {
+        return value < min ? min : (value > max ? max : value);
+    }
+
+    static float clamp(float value, float min, float max) {
+        return value < min ? min : (value > max ? max : value);
+    }
+
+    /** Long edge of the working image used for edge detection. */
+    public int maxProcessingDimension() {
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                return 420;
+            case DETAIL_MEDIUM:
+                return 560;
+            case DETAIL_ULTRA:
+                return 900;
+            case DETAIL_HIGH:
+            default:
+                return 720;
+        }
+    }
+
+    public int maxStrokes() {
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                return 280;
+            case DETAIL_MEDIUM:
+                return 520;
+            case DETAIL_ULTRA:
+                return 1400;
+            case DETAIL_HIGH:
+            default:
+                return 900;
+        }
+    }
+
+    public float blurSigma() {
+        return 0.55f + clamp(noiseReduction, 0, 100) / 100f * 2.1f;
+    }
+
+    /**
+     * Gain of the local-contrast normalisation applied before edge detection.
+     * Faint line art (eyes, brows, pale outlines) is only a few grey levels from
+     * its surroundings; normalising against a local mean makes those details
+     * survive the Canny thresholds while strong outlines stay unaffected.
+     */
+    public float localContrastGain() {
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                return 1.0f;
+            case DETAIL_MEDIUM:
+                return 1.25f;
+            case DETAIL_ULTRA:
+                return 1.8f;
+            case DETAIL_HIGH:
+            default:
+                return 1.5f;
+        }
+    }
+
+    public int backgroundLevel() {
+        return 255 - Math.round(clamp(backgroundSuppression, 0, 100) * 0.7f);
+    }
+
+    /** Fraction of non-maximum-suppressed pixels kept as strong edges. */
+    public float strongEdgeFraction() {
+        float base;
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                base = 0.085f;
+                break;
+            case DETAIL_MEDIUM:
+                base = 0.15f;
+                break;
+            case DETAIL_ULTRA:
+                base = 0.30f;
+                break;
+            case DETAIL_HIGH:
+            default:
+                base = 0.22f;
+                break;
+        }
+        float sensitivity = 1f + (clamp(edgeSensitivity, 0, 100) - 55) / 55f * 0.75f;
+        return clamp(base * sensitivity, 0.035f, 0.55f);
+    }
+
+    /**
+     * Low/high hysteresis ratio. Higher detail levels keep weaker connected
+     * edges (soft jaw lines, eyelids, fabric folds) instead of only the strong
+     * outline seeds.
+     */
+    public float weakEdgeRatio() {
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                return 0.46f;
+            case DETAIL_MEDIUM:
+                return 0.38f;
+            case DETAIL_ULTRA:
+                return 0.25f;
+            case DETAIL_HIGH:
+            default:
+                return 0.30f;
+        }
+    }
+
+    public int minComponentPixels() {
+        int base;
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                base = 18;
+                break;
+            case DETAIL_MEDIUM:
+                base = 12;
+                break;
+            case DETAIL_ULTRA:
+                base = 5;
+                break;
+            case DETAIL_HIGH:
+            default:
+                base = 8;
+                break;
+        }
+        return Math.max(3, Math.round(base * (1f + clamp(noiseReduction, 0, 100) / 100f)));
+    }
+
+    public float simplifyTolerance() {
+        return 0.45f + clamp(simplification, 0, 100) / 100f * 2.1f;
+    }
+
+    public float smoothStrength() {
+        return clamp(smoothing, 0, 100) / 100f;
+    }
+
+    /** Occupancy ratio above which a stroke is considered already drawn. */
+    public float overlapRejectRatio() {
+        return clamp(0.82f - clamp(strokeOverlapReduction, 0, 100) / 100f * 0.52f, 0.22f, 0.85f);
+    }
+}

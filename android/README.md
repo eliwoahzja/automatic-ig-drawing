@@ -1,20 +1,134 @@
-# Android controls
+# Auto Sketch Mobile (Android)
 
-This Android prototype uses an AccessibilityService to draw generated paths within a selected screen rectangle. Android 8.0 or later is required.
+An Android accessibility app that traces an uploaded image onto the Instagram
+drawing canvas — or any other drawing app — with continuous, recognisable
+strokes. The desktop Python version in the repository root is unchanged and
+continues to work independently.
 
-1. Install the debug APK from the **Build Android APK** GitHub Actions artifact.
-2. Open Auto Sketch Mobile, choose an image, and generate the sketch.
-3. Open Android Accessibility Settings and enable the Auto Sketch Mobile drawing service.
-4. Return to Auto Sketch Mobile and choose **Open floating controls**.
-5. Open Instagram's drawing canvas or another drawing application.
-6. Drag **≡ Auto Sketch • Drag** to move the floating control panel.
-7. Tap **Select / resize area**. A blue outlined rectangle appears.
-8. Drag the **MOVE** grip to reposition the rectangle. Drag any of the four corner handles to resize it.
-9. Tap or interact with the underlying application outside the grips. The selection overlay does not capture those touches.
-10. Tap **Use area** to save the rectangle. The drawing gestures will be mapped inside its bounds.
-11. Move the control panel outside the canvas. Tap **Start / Resume**, **Pause**, or **Stop**.
-12. Tap **−** to collapse the controls, or **Hide** to remove them.
+## What changed
 
-The four corner grips, MOVE grip, and Use area / Cancel buttons are touchable. The rest of the screen remains interactive during area selection. The service uses Android accessibility overlays rather than a full-screen touch-blocking window. Accessibility access is required, but overlay permission and root access are not.
+The old Android build grouped edge pixels into short horizontal segments, which
+produced dots, blobs and distorted shapes. That code is gone. The drawing engine
+is now a real image-processing pipeline:
 
-The selected rectangle uses absolute screen coordinates, so reselect it after rotating your phone or changing the drawing canvas layout. Gesture speed and canvas behavior depend on the target application. This APK has not yet been tested with every Instagram version.
+1. image decoded and bounded (max 1280 px, aspect ratio preserved)
+2. grayscale conversion with brightness, contrast, invert and local-contrast normalisation
+   (so faint eyes, brows and pale outlines survive thresholding) plus background flattening
+3. configurable Gaussian smoothing
+4. Sobel gradients
+5. non-maximum suppression (4-directional sector test)
+6. dual-threshold hysteresis with a percentile-based high threshold
+7. 8-connected despeckling of tiny components
+8. Zhang-Suen thinning to a single-pixel skeleton
+9. contour tracing into ordered polylines (endpoints, junctions, loops)
+10. Douglas-Peucker simplification
+11. junction-fragment merging with tangent continuity
+12. duplicate/overlap rejection on an occupancy grid
+13. nearest-neighbour stroke ordering with direction reversal
+14. resampling to screen pixels and gesture chunking
+
+Every step is pure Java (`EdgeDetector`, `ContourTracer`, `StrokeOptimizer`,
+`CanvasMapper`, `SketchEngine`) and covered by JVM unit tests.
+
+## Continuous strokes
+
+Each contour becomes one continuous `GestureDescription.StrokeDescription` that
+is dispatched only after the previous gesture reports completion. Very long
+contours are split into chunks whose end point is the next chunk's start point,
+so the line stays continuous while respecting Android's per-gesture duration
+limit. Strokes never connect two unrelated contours, and resampling removes the
+"dot at every touch" artifact.
+
+Pause stops scheduling new strokes; the active gesture is allowed to finish.
+Resume continues at the same stroke, and Stop clears the queue and progress.
+Completion is only reported after every stroke finished successfully.
+
+## Canvas fitting
+
+`Contain` (default) fits the whole image inside the selected rectangle and
+centres it. `Fill` covers the rectangle and crops the excess. `Stretch` is
+opt-in and scales each axis independently. Every mapped point is clamped and
+clipped to the selected area.
+
+## Floating controls
+
+Compact dark translucent panel:
+
+- draggable by its header, clamped to the screen
+- resize handle in the bottom-right corner with remembered dimensions
+- minimise to a small draggable icon that shows drawing progress
+- Start, Pause, Resume, Stop, Area, Preview, Settings, Close
+
+Settings include detail level, edge sensitivity, noise reduction, contrast,
+brightness, invert, background suppression, speed, smoothing, minimum/maximum
+stroke length, point spacing, simplification, overlap reduction and the canvas
+fit mode. Image-processing changes re-run the pipeline in the background and
+refresh the on-screen preview before drawing starts.
+
+## Drawing area
+
+Tap **Area** to show a transparent frame with corner handles and a move grip.
+The rest of the overlay is `FLAG_NOT_TOUCHABLE`, so the app underneath stays
+fully usable while you position the frame. **Use area** saves it, **Cancel**
+keeps the previous one. The live preview uses the exact polylines that will be
+drawn; it can be hidden before starting.
+
+## Install and use
+
+1. Install the APK from the **Build Android APK** GitHub Actions artifact.
+2. Open Auto Sketch, choose an image, tap **Generate sketch**.
+3. Enable *Auto Sketch Mobile* in Android accessibility settings.
+4. Tap **Floating controls**.
+5. In Instagram, open a story/post drawing canvas and pick a thin brush and colour.
+6. Tap **Area**, position the frame over the canvas, tap **Use area**.
+7. Move the panel off the canvas, tap **Start**. The panel minimises itself so
+   it does not cover the drawing.
+8. Use **Pause / Resume / Stop** from the panel (tap the small icon to reopen it).
+
+## Composable source layout
+
+```
+android/app/src/main/java/dev/autosketch/mobile/
+  MainActivity.java        image selection, generation, preview, entry points
+  SketchPreviewView.java   preview renderer (same polylines as gestures)
+  SketchEngine.java        pipeline orchestration (pure Java)
+  EdgeDetector.java        grayscale, blur, Sobel, NMS, hysteresis, thinning
+  ContourTracer.java       skeleton -> ordered polylines
+  StrokeOptimizer.java     resample, simplify, merge, dedupe, order, chunk
+  CanvasMapper.java        contain/fill/stretch, clipping, gesture resampling
+  DrawingSettings.java     settings model and derived pipeline parameters
+  Sketch.java              normalised stroke result
+  SketchProcessor.java     bitmap bridge and background-safe processing
+  SketchSession.java       shared image/sketch state
+  SettingsStore.java       persistence
+  DrawingController.java   state machine and gesture scheduler
+  DrawService.java         accessibility service, gestures, reprocessing
+  OverlayController.java   floating panel, settings page, selection, preview
+```
+
+## Build and test
+
+```bash
+cd android
+gradle testDebugUnitTest   # JVM tests: edge detection, tracing, mapping, continuity
+gradle assembleDebug       # app/build/outputs/apk/debug/app-debug.apk
+```
+
+CI (`.github/workflows/build-android.yml`) runs both on every push that touches
+`android/**` and uploads the APK plus the unit-test report.
+
+## Known limitations
+
+- The app draws with accessibility gestures, not by modifying Instagram. Once a
+  stroke is dispatched it cannot be cancelled; Stop only prevents later strokes.
+- Android caps a single gesture stroke's duration (60 s platform limit); long
+  contours are therefore chunked at the configured maximum (default 2.4 s).
+- Injected gestures land on the topmost touchable window. Keep the floating
+  panel and its minimised icon outside the selected canvas, otherwise that part
+  of the drawing is lost. Auto-minimising helps but does not move the icon.
+- Brush size, colour and tool must be chosen by the user; the app does not tap
+  Instagram controls.
+- Instagram changes its UI regularly. The app has been verified by build and
+  unit tests, not on a physical device against a live Instagram build.
+- Very small canvases reduce effective stroke detail; increase detail level or
+  select a larger area.
