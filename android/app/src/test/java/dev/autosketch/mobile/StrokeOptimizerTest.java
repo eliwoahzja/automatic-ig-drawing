@@ -10,6 +10,36 @@ import org.junit.Test;
 public class StrokeOptimizerTest {
 
     @Test
+    public void tinyClosedLoopsAreDroppedButRealOnesSurvive() {
+        ArrayList<float[]> strokes = new ArrayList<>();
+        float[] glitter = new float[9 * 2];
+        for (int i = 0; i < 8; i++) {
+            double angle = i * Math.PI / 4;
+            glitter[i * 2] = 100 + (float) Math.cos(angle) * 8;
+            glitter[i * 2 + 1] = 100 + (float) Math.sin(angle) * 8;
+        }
+        glitter[16] = glitter[0];
+        glitter[17] = glitter[1];
+        strokes.add(glitter);
+
+        float[] big = new float[9 * 2];
+        for (int i = 0; i < 8; i++) {
+            double angle = i * Math.PI / 4;
+            big[i * 2] = 200 + (float) Math.cos(angle) * 40;
+            big[i * 2 + 1] = 200 + (float) Math.sin(angle) * 40;
+        }
+        big[16] = big[0];
+        big[17] = big[1];
+        strokes.add(big);
+        strokes.add(new float[]{10, 300, 60, 300, 120, 300});
+
+        ArrayList<float[]> kept = StrokeOptimizer.dropTinyLoops(strokes, 400, 400);
+        assertEquals("only the sprinkle loop should go", 2, kept.size());
+        assertTrue(kept.contains(strokes.get(1)));
+    }
+
+
+    @Test
     public void simplifyReducesCollinearLineToEndpoints() {
         float[] line = {0, 10, 10, 10, 20, 10, 30, 10, 40, 10};
         float[] simplified = StrokeOptimizer.simplify(line, 1f);

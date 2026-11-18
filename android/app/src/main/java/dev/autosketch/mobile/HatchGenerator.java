@@ -1,6 +1,7 @@
 package dev.autosketch.mobile;
 
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Tonal hatching for the full drawing mode. Three crossing hatch layers are
@@ -9,9 +10,12 @@ import java.util.ArrayList;
  * split into pen-sized dashes and simplified like traced contours, so the
  * result is drawn with the same continuous gesture pipeline as the outlines.
  *
- * <p>Hatching only appears near detected edges. That keeps flat photo
- * backgrounds and empty canvas out of the drawing and puts the shading on the
- * subject, where the contour detail already is.</p>
+ * <p>When the finished outlines are supplied, hatching is limited to the areas
+ * they enclose. Flood-filling the outline walls from the image border gives the
+ * inside of the subject, so a decorated background, a busy wallpaper or a page
+ * of watermark text never receives diagonal stripes. Hatching is additionally
+ * restricted to pixels that are genuinely dark and surrounded by dark pixels,
+ * which keeps a single dark hair strand from shading the whole face.</p>
  */
 public final class HatchGenerator {
 
@@ -23,6 +27,16 @@ public final class HatchGenerator {
 
     public static ArrayList<float[]> generate(int[] gray, int width, int height, byte[] edges,
                                               DrawingSettings settings, float densityScale) {
+        return generate(gray, width, height, edges, settings, densityScale, null);
+    }
+
+    /**
+     * @param outlines the finished, filtered outlines in pixel coordinates; when
+     *                 present the hatch is confined to the regions they enclose.
+     */
+    public static ArrayList<float[]> generate(int[] gray, int width, int height, byte[] edges,
+                                              DrawingSettings settings, float densityScale,
+                                              List<float[]> outlines) {
         ArrayList<float[]> strokes = new ArrayList<>();
         if (gray == null || width < 8 || height < 8) {
             return strokes;
@@ -34,13 +48,13 @@ public final class HatchGenerator {
         int step = Math.max(1, Math.round(spacing / 3f));
         int minRun = Math.max(6, spacing);
         int maxRun = Math.max(18, spacing * 2);
-        int cap = 260 + settings.detailLevel * 130;
+        int cap = settings.hatchStrokeBudget();
         int layerCap = Math.max(50, cap / ANGLES.length);
         int diagonal = (int) Math.ceil(Math.hypot(width, height));
         int centerX = width / 2;
         int centerY = height / 2;
         int detail = settings.detailLevel;
-        boolean[] nearEdge = edgeProximity(edges, width, height, Math.max(8, spacing * 3));
+        boolean[] allowed = hatchArea(edges, width, height, outlines, spacing);
 
         for (int layer = 0; layer < ANGLES.length; layer++) {
             int stopAt = Math.min(cap, strokes.size() + layerCap);
@@ -64,7 +78,7 @@ public final class HatchGenerator {
                     if (inside) {
                         int index = iy * width + ix;
                         int maxGray = Math.round((1f - threshold) * 255f);
-                        if (nearEdge[index] && solidDark(gray, width, height, ix, iy,
+                        if (allowed[index] && solidDark(gray, width, height, ix, iy,
                                 Math.max(2, step), maxGray)) {
                             darkness = 1f - gray[index] / 255f;
                         }
@@ -87,6 +101,25 @@ public final class HatchGenerator {
             }
         }
         return strokes;
+    }
+
+    /**
+     * Where hatching is allowed at all: the areas enclosed by the finished
+     * outlines, or (when no outlines are supplied) the neighbourhood of the raw
+     * edge mask.
+     */
+    static boolean[] hatchArea(byte[] edges, int width, int height,
+                               List<float[]> outlines, int spacing) {
+        if (outlines == null || outlines.isEmpty()) {
+            return edgeProximity(edges, width, height, Math.max(8, spacing * 3));
+        }
+        // Only strokes that survived filtering count: raw edge pixels are spread
+        // over the whole photo (glitter, grain, wallpaper), which is what used to
+        // stripe the background. Hatching stays within a few hatch spacings of a
+        // real contour, and solidDark() keeps it on actual shadow.
+        byte[] walls = rasterize(outlines, width, height);
+        walls = dilate(walls, width, height, 1);
+        return proximity(walls, width, height, Math.max(12, spacing * 3));
     }
 
     /** Requires the sample and its four neighbours to be dark, keeping hatch inside shapes. */
@@ -151,6 +184,100 @@ public final class HatchGenerator {
             queue[tail++] = index;
         }
         return tail;
+    }
+
+    /** Rasterises polylines into a wall mask. */
+    private static byte[] rasterize(List<float[]> outlines, int width, int height) {
+        byte[] walls = new byte[width * height];
+        for (float[] stroke : outlines) {
+            if (stroke == null || stroke.length < 4) {
+                continue;
+            }
+            for (int i = 2; i + 1 < stroke.length; i += 2) {
+                drawLine(walls, width, height, stroke[i - 2], stroke[i - 1], stroke[i],
+                        stroke[i + 1]);
+            }
+        }
+        return walls;
+    }
+
+    private static void drawLine(byte[] mask, int width, int height, float x0, float y0,
+                                 float x1, float y1) {
+        int ax = Math.round(x0);
+        int ay = Math.round(y0);
+        int bx = Math.round(x1);
+        int by = Math.round(y1);
+        int dx = Math.abs(bx - ax);
+        int dy = -Math.abs(by - ay);
+        int sx = ax < bx ? 1 : -1;
+        int sy = ay < by ? 1 : -1;
+        int error = dx + dy;
+        while (true) {
+            if (ax >= 0 && ay >= 0 && ax < width && ay < height) {
+                mask[ay * width + ax] = 1;
+            }
+            if (ax == bx && ay == by) {
+                return;
+            }
+            int doubled = 2 * error;
+            if (doubled >= dy) {
+                error += dy;
+                ax += sx;
+            }
+            if (doubled <= dx) {
+                error += dx;
+                ay += sy;
+            }
+        }
+    }
+
+    /** Separable square dilation. */
+    private static byte[] dilate(byte[] mask, int width, int height, int radius) {
+        if (radius <= 0) {
+            return mask;
+        }
+        byte[] horizontal = new byte[mask.length];
+        byte[] out = new byte[mask.length];
+        for (int y = 0; y < height; y++) {
+            int row = y * width;
+            for (int x = 0; x < width; x++) {
+                int from = Math.max(0, x - radius);
+                int to = Math.min(width - 1, x + radius);
+                byte value = 0;
+                for (int k = from; k <= to; k++) {
+                    if (mask[row + k] != 0) {
+                        value = 1;
+                        break;
+                    }
+                }
+                horizontal[row + x] = value;
+            }
+        }
+        for (int x = 0; x < width; x++) {
+            for (int y = 0; y < height; y++) {
+                int from = Math.max(0, y - radius);
+                int to = Math.min(height - 1, y + radius);
+                byte value = 0;
+                for (int k = from; k <= to; k++) {
+                    if (horizontal[k * width + x] != 0) {
+                        value = 1;
+                        break;
+                    }
+                }
+                out[y * width + x] = value;
+            }
+        }
+        return out;
+    }
+
+    /** Square dilation of a mask expressed as a boolean proximity test. */
+    private static boolean[] proximity(byte[] mask, int width, int height, int radius) {
+        boolean[] near = new boolean[width * height];
+        byte[] grown = dilate(mask, width, height, radius);
+        for (int i = 0; i < grown.length; i++) {
+            near[i] = grown[i] != 0;
+        }
+        return near;
     }
 
     private static void emit(ArrayList<Float> run, ArrayList<float[]> out, int stopAt,

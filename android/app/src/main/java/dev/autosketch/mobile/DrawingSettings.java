@@ -118,14 +118,14 @@ public final class DrawingSettings {
     public int maxStrokes() {
         switch (detailLevel) {
             case DETAIL_LOW:
-                return 280;
+                return 240;
             case DETAIL_MEDIUM:
-                return 520;
+                return 420;
             case DETAIL_ULTRA:
-                return 1400;
+                return 820;
             case DETAIL_HIGH:
             default:
-                return 900;
+                return 620;
         }
     }
 
@@ -133,12 +133,53 @@ public final class DrawingSettings {
     public int maxStrokesForRenderMode() {
         int base = maxStrokes();
         if (renderMode == MODE_FULL) {
-            return Math.round(base * 1.8f);
+            return Math.round(base * 1.35f);
         }
         if (renderMode == MODE_CLEAN) {
             return Math.max(60, Math.round(base * 0.65f));
         }
         return base;
+    }
+
+    /** Budget for the hatch layers alone, proportional to the detail level. */
+    public int hatchStrokeBudget() {
+        return 180 + detailLevel * 110;
+    }
+
+    /**
+     * Minimum two-sided colour contrast a traced polyline needs to be kept.
+     *
+     * <p>Edge detection can only see that neighbouring pixels differ, which is
+     * exactly what glitter, watermarks, grain and soft photo texture do; on a
+     * decorated image that produced hundreds of scribbles over the whole
+     * canvas. A real outline separates two areas of different colour, so this
+     * threshold removes texture while keeping genuine contours.</p>
+     */
+    public float minStepContrast() {
+        float base;
+        switch (detailLevel) {
+            case DETAIL_LOW:
+                base = 11.5f;
+                break;
+            case DETAIL_MEDIUM:
+                base = 10f;
+                break;
+            case DETAIL_ULTRA:
+                base = 7.5f;
+                break;
+            case DETAIL_HIGH:
+            default:
+                base = 8.5f;
+                break;
+        }
+        if (renderMode == MODE_CLEAN) {
+            base *= 1.3f;
+        } else if (renderMode == MODE_FULL) {
+            base *= 1.1f;
+        }
+        // More noise reduction means the user asked for a calmer drawing.
+        base *= 1f + (clamp(noiseReduction, 0, 100) - 40) / 200f;
+        return clamp(base, 4f, 18f);
     }
 
     /** Clean mode drops small details; full mode keeps short hatch dashes. */
@@ -156,8 +197,25 @@ public final class DrawingSettings {
         return renderMode == MODE_CLEAN ? 1.6f : 1f;
     }
 
+    /**
+     * Smoothing sigma for a working image of the given short side.
+     *
+     * <p>The filter has to scale with the processing resolution. A fixed 1.4 px
+     * blur is enough at 400 px but leaves glitter, grain and watermark texture
+     * intact at 900 px, which then gets traced as hundreds of scribbles. Scaling
+     * the kernel keeps the same amount of texture removal at every detail level.</p>
+     */
+    public float blurSigma(int workingShortSide) {
+        // Small working images already smooth enough; below ~1.4 px thin ink
+        // rings start to break up into fragments at the skeleton stage.
+        float base = Math.max(1.39f, 0.3f + Math.max(0, workingShortSide) * 0.0026f);
+        float knob = clamp(noiseReduction, 0, 100) / 100f;
+        return Math.max(0.85f, base * (0.5f + knob * 1.25f));
+    }
+
+    /** Compatibility helper: sigma for a 720 px working image. */
     public float blurSigma() {
-        return 0.55f + clamp(noiseReduction, 0, 100) / 100f * 2.1f;
+        return blurSigma(720);
     }
 
     /**

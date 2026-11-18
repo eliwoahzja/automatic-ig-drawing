@@ -1,13 +1,15 @@
 package dev.autosketch.mobile;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
 
 /**
  * The sketch pipeline. Takes ARGB pixels, runs grayscale + Gaussian smoothing,
  * Canny edge detection (Sobel, non-maximum suppression, dual-threshold
  * hysteresis), despeckling, Zhang-Suen thinning, contour tracing,
- * Douglas-Peucker simplification, stroke merging, duplicate removal, ordering
- * and normalisation.
+ * Douglas-Peucker simplification, colour-saliency filtering, stroke merging,
+ * duplicate and decoration removal, ordering and normalisation.
  *
  * <p>Pure Java: no Android types, so it is covered by JVM unit tests.</p>
  */
@@ -54,7 +56,8 @@ public final class SketchEngine {
         if (cancel.isCancelled()) {
             return Sketch.empty();
         }
-        int[] blurred = EdgeDetector.blur(gray, width, height, config.blurSigma());
+        int[] blurred = EdgeDetector.blur(gray, width, height,
+                config.blurSigma(Math.min(width, height)));
         byte[] edges = EdgeDetector.detect(blurred, width, height, config);
         if (cancel.isCancelled()) {
             return Sketch.empty();
@@ -72,6 +75,10 @@ public final class SketchEngine {
                 * config.minStrokeMultiplier();
         float tolerance = config.simplifyTolerance() * config.simplifyMultiplier();
         int smoothPasses = config.smoothing < 20 ? 0 : (config.smoothing < 60 ? 1 : 2);
+        // Grain and sensor noise put a floor under what counts as a real
+        // boundary; without it a noisy photo traces its own noise floor.
+        float minStepContrast = Math.max(config.minStepContrast(),
+                EdgeDetector.noiseLevel(gray, width, height) * 3f);
 
         ArrayList<float[]> polylines = new ArrayList<>();
         for (int[] chain : chains) {
@@ -86,6 +93,11 @@ public final class SketchEngine {
             points = StrokeOptimizer.smooth(points, smoothPasses, config.smoothStrength());
             points = StrokeOptimizer.simplify(points, tolerance);
             if (points.length < 4 || StrokeOptimizer.length(points) < minLength * 0.6f) {
+                continue;
+            }
+            // Texture, glitter and watermarks all produce gradients but no real
+            // boundary; only keep strokes that separate two different colours.
+            if (StrokeSaliency.stepContrast(points, argb, width, height) < minStepContrast) {
                 continue;
             }
             polylines.add(points);
@@ -120,6 +132,10 @@ public final class SketchEngine {
             rejectRatio = Math.max(0.5f, rejectRatio - 0.1f);
         }
         cleaned = StrokeOptimizer.suppressCovered(cleaned, coverageRadius, rejectRatio);
+        cleaned = StrokeOptimizer.dropTinyLoops(cleaned, width, height);
+        // Rank by structure (length) and by how clearly the stroke separates two
+        // areas, so a small budget keeps the face before background texture.
+        cleaned = rankBySalience(cleaned, argb, width, height);
 
         int outlineBudget = config.renderMode == DrawingSettings.MODE_FULL
                 ? Math.max(80, Math.round(config.maxStrokes() * 0.75f))
@@ -129,7 +145,7 @@ public final class SketchEngine {
         }
         if (config.renderMode == DrawingSettings.MODE_FULL && !cancel.isCancelled()) {
             ArrayList<float[]> hatch = HatchGenerator.generate(blurred, width, height, edges,
-                    config, referenceScale);
+                    config, referenceScale, cleaned);
             int totalBudget = config.maxStrokesForRenderMode();
             for (float[] stroke : hatch) {
                 if (cleaned.size() >= totalBudget) {
@@ -144,6 +160,37 @@ public final class SketchEngine {
         }
 
         return new Sketch(width, height, normalize(cleaned, width, height), edgePixels);
+    }
+
+    /**
+     * Longest-first order that also prefers contours with a real colour step;
+     * texture scribbles are long-ish but flat across, so they rank low.
+     */
+    private static ArrayList<float[]> rankBySalience(ArrayList<float[]> strokes, int[] argb,
+                                                     int width, int height) {
+        int count = strokes.size();
+        if (count <= 1) {
+            return new ArrayList<>(strokes);
+        }
+        final float[] score = new float[count];
+        Integer[] order = new Integer[count];
+        for (int i = 0; i < count; i++) {
+            float[] stroke = strokes.get(i);
+            float contrast = StrokeSaliency.stepContrast(stroke, argb, width, height);
+            score[i] = StrokeOptimizer.length(stroke) * (0.35f + contrast / 18f);
+            order[i] = i;
+        }
+        Arrays.sort(order, new Comparator<Integer>() {
+            @Override
+            public int compare(Integer a, Integer b) {
+                return Float.compare(score[b], score[a]);
+            }
+        });
+        ArrayList<float[]> ranked = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            ranked.add(strokes.get(order[i]));
+        }
+        return ranked;
     }
 
     private static int countPixels(byte[] mask) {

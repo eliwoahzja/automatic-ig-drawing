@@ -432,6 +432,135 @@ public final class StrokeOptimizer {
     }
 
     /**
+     * Drops small closed loops: glitter, sprinkles, hearts, polka dots and the
+     * loops inside watermark letters all trace as tiny rings that add noise but
+     * no shape. Eyes, nostrils and other real features are several times bigger
+     * than the cut-off, which is relative to the image size.
+     */
+    public static ArrayList<float[]> dropTinyLoops(ArrayList<float[]> strokes, int width, int height) {
+        ArrayList<float[]> kept = new ArrayList<>(strokes.size());
+        float shortSide = Math.max(1, Math.min(width, height));
+        float closedExtent = shortSide * 0.045f;
+        float roundExtent = shortSide * 0.06f;
+        float closeDistance = Math.max(2f, shortSide * 0.01f);
+        float closeSquared = closeDistance * closeDistance;
+        AnchorGrid anchors = new AnchorGrid(strokes, width, height, shortSide);
+        for (float[] stroke : strokes) {
+            if (stroke.length >= 6) {
+                float minX = Float.MAX_VALUE;
+                float maxX = -Float.MAX_VALUE;
+                float minY = Float.MAX_VALUE;
+                float maxY = -Float.MAX_VALUE;
+                for (int i = 0; i + 1 < stroke.length; i += 2) {
+                    minX = Math.min(minX, stroke[i]);
+                    maxX = Math.max(maxX, stroke[i]);
+                    minY = Math.min(minY, stroke[i + 1]);
+                    maxY = Math.max(maxY, stroke[i + 1]);
+                }
+                float extent = Math.max(maxX - minX, maxY - minY);
+                float dx = endX(stroke) - startX(stroke);
+                float dy = endY(stroke) - startY(stroke);
+                boolean closed = dx * dx + dy * dy <= closeSquared;
+                // Glitter often breaks into arcs instead of full rings: anything
+                // small that wraps around a lot is still a sprinkle, not a shape.
+                float wrapped = extent > 0.5f ? length(stroke) / extent : 0f;
+                if (closed ? extent < closedExtent
+                        : extent < roundExtent && wrapped > 2f) {
+                    continue;
+                }
+                // A small ring all on its own is decoration: every real feature
+                // (eye, mouth, button) sits next to a structural contour.
+                boolean loopLike = closed || wrapped > 2f;
+                if (loopLike && extent < shortSide * 0.09f && anchors.isFarFromAny(
+                        (minX + maxX) * 0.5f, (minY + maxY) * 0.5f,
+                        Math.max(shortSide * 0.05f, extent * 2.5f))) {
+                    continue;
+                }
+            }
+            kept.add(stroke);
+        }
+        return kept;
+    }
+
+    /**
+     * Coarse occupancy grid of the long, structural strokes. A small loop that
+     * has no structural stroke anywhere near it is a sprinkle, not a detail.
+     */
+    private static final class AnchorGrid {
+        private final boolean[] cells;
+        private final int columns;
+        private final int rows;
+        private final float cellSize;
+        private final boolean empty;
+
+        AnchorGrid(ArrayList<float[]> strokes, int width, int height, float shortSide) {
+            this.cellSize = Math.max(3f, shortSide / 48f);
+            this.columns = Math.max(1, (int) Math.ceil(width / cellSize));
+            this.rows = Math.max(1, (int) Math.ceil(height / cellSize));
+            this.cells = new boolean[columns * rows];
+            // Anchors are structural contours, measured by extent so that a long
+            // thin sprinkle ring is not mistaken for one.
+            float minAnchorExtent = shortSide * 0.08f;
+            boolean any = false;
+            for (float[] stroke : strokes) {
+                if (stroke.length < 4) {
+                    continue;
+                }
+                float lowX = Float.MAX_VALUE;
+                float highX = -Float.MAX_VALUE;
+                float lowY = Float.MAX_VALUE;
+                float highY = -Float.MAX_VALUE;
+                for (int i = 0; i + 1 < stroke.length; i += 2) {
+                    lowX = Math.min(lowX, stroke[i]);
+                    highX = Math.max(highX, stroke[i]);
+                    lowY = Math.min(lowY, stroke[i + 1]);
+                    highY = Math.max(highY, stroke[i + 1]);
+                }
+                if (Math.max(highX - lowX, highY - lowY) < minAnchorExtent) {
+                    continue;
+                }
+                any = true;
+                for (int i = 2; i + 1 < stroke.length; i += 2) {
+                    mark(stroke[i - 2], stroke[i - 1]);
+                    mark(stroke[i], stroke[i + 1]);
+                }
+            }
+            this.empty = !any;
+        }
+
+        private void mark(float x, float y) {
+            int column = (int) (x / cellSize);
+            int row = (int) (y / cellSize);
+            if (column < 0 || row < 0 || column >= columns || row >= rows) {
+                return;
+            }
+            cells[row * columns + column] = true;
+        }
+
+        boolean isFarFromAny(float x, float y, float radius) {
+            if (empty) {
+                return false;
+            }
+            int column = (int) (x / cellSize);
+            int row = (int) (y / cellSize);
+            int reach = Math.max(1, (int) Math.ceil(radius / cellSize));
+            for (int dy = -reach; dy <= reach; dy++) {
+                int r = row + dy;
+                if (r < 0 || r >= rows) {
+                    continue;
+                }
+                for (int dx = -reach; dx <= reach; dx++) {
+                    int c = column + dx;
+                    if (c >= 0 && c < columns && cells[r * columns + c]) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+    }
+
+    /**
      * Drops strokes that mostly run on top of already kept strokes, measured as
      * the fraction of points within {@code radius}. Longest strokes are supplied
      * first, so the surviving line is the dominant outline. This is what removes

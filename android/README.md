@@ -15,20 +15,27 @@ is now a real image-processing pipeline:
 2. grayscale conversion with alpha composited over white (transparent PNG cut-outs stay blank),
    brightness, contrast, invert and local-contrast normalisation
    (so faint eyes, brows and pale outlines survive thresholding) plus background flattening
-3. configurable Gaussian smoothing
+3. Gaussian smoothing whose sigma scales with the processing resolution — a fixed kernel is
+   enough at 400 px but leaves glitter, grain and watermark texture intact at 900 px
 4. Sobel gradients
 5. non-maximum suppression (4-directional sector test)
-6. dual-threshold hysteresis with a percentile-based high threshold
+6. dual-threshold hysteresis with a percentile-based high threshold, plus a floor derived from
+   the image's own noise level
 7. 8-connected despeckling of tiny components
 8. Zhang-Suen thinning to a single-pixel skeleton
 9. contour tracing into ordered polylines (endpoints, junctions, loops)
 10. Douglas-Peucker simplification
-11. junction-fragment merging with tangent continuity
-12. distance-based coverage suppression that removes duplicate traces and the second
+11. colour saliency gate: a traced line is kept only if it separates two differently coloured
+    areas or sits on a real ink ridge. Texture, grain, sprinkles and watermark lettering produce
+    gradients but no colour boundary, and used to become hundreds of scribbles
+12. junction-fragment merging with tangent continuity
+13. distance-based coverage suppression that removes duplicate traces and the second
     line of every thick ink stroke (the "double outline" halo)
-13. optional tonal cross-hatching for the full drawing mode
-14. nearest-neighbour stroke ordering with direction reversal
-15. canvas-adaptive resampling, minimum stroke length and stroke budget, then gesture chunking
+14. decoration rejection: tiny closed rings, arcs that wrap around a sprinkle, and small loops
+    with no structural contour anywhere near them
+15. optional tonal cross-hatching for the full drawing mode
+16. nearest-neighbour stroke ordering with direction reversal
+17. canvas-adaptive resampling, minimum stroke length and stroke budget, then gesture chunking
 
 Every step is pure Java (`EdgeDetector`, `ContourTracer`, `StrokeOptimizer`,
 `HatchGenerator`, `CanvasMapper`, `SketchEngine`) and covered by JVM unit tests.
@@ -39,9 +46,10 @@ Every step is pure Java (`EdgeDetector`, `ContourTracer`, `StrokeOptimizer`,
 - **Clean** prunes harder: longer minimum stroke length, stronger simplification and
   aggressive double-line removal. Best for busy photos and small canvases.
 - **Full** adds tonal hatching on top of the outlines. Three crossing hatch layers
-  cover mid tones, shadows and the darkest areas, generated only near detected edges
-  and only where the pixels are actually dark, so backgrounds stay blank. Hatch
-  spacing scales with the selected canvas size instead of the source image.
+  cover mid tones, shadows and the darkest areas, generated only within a few hatch
+  spacings of a kept outline and only where the pixels are actually dark, so a
+  decorated or textured background stays blank. Hatch spacing scales with the selected
+  canvas size instead of the source image.
 
 Hatching is drawn with the same continuous gesture pipeline as the outlines; there
 are no fills. It needs many short strokes, so use a thin brush and the fastest
@@ -119,7 +127,8 @@ android/app/src/main/java/dev/autosketch/mobile/
   MainActivity.java        image selection, generation, preview, entry points
   SketchPreviewView.java   preview renderer (same polylines as gestures)
   SketchEngine.java        pipeline orchestration (pure Java)
-  EdgeDetector.java        grayscale, blur, Sobel, NMS, hysteresis, thinning
+  EdgeDetector.java        grayscale, blur, noise estimate, Sobel, NMS, hysteresis, thinning
+  StrokeSaliency.java      two-sided colour / ridge test that rejects texture
   ContourTracer.java       skeleton -> ordered polylines
   HatchGenerator.java      tonal cross-hatching for full drawing mode
   StrokeOptimizer.java     resample, simplify, merge, dedupe, order, chunk
@@ -160,5 +169,10 @@ CI (`.github/workflows/build-android.yml`) runs both on every push that touches
   unit tests, not on a physical device against a live Instagram build.
 - Very small canvases automatically receive fewer, longer strokes. If detail is
   still lost, select a larger area or use **Clean** mode.
-- **Full** mode is stroke-heavy: a 1080 px canvas can receive more than a thousand
-  short hatch strokes, so a complete drawing takes noticeably longer than Sketch.
+- **Full** mode is stroke-heavy: at Ultra detail a canvas can receive up to ~1100 strokes
+  (outlines plus hatching), so a complete drawing takes noticeably longer than Sketch.
+- Sprinkles and stickers that sit right on top of the subject cannot be told apart from
+  real details; they may leave a few small rings. Background decoration is ignored.
+- Very noisy or heavily filtered photos lose fine lines because the smoothing that removes
+  glitter also softens them. Lower **noise reduction** to keep more detail and accept more
+  texture, or raise it for a calmer drawing.

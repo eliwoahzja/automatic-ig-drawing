@@ -79,10 +79,34 @@ public class HatchGeneratorTest {
         DrawingSettings settings = fullSettings();
         ArrayList<float[]> hatch = HatchGenerator.generate(gray, size, size, edges,
                 settings, 1f);
-        int cap = 260 + settings.detailLevel * 130;
+        int cap = settings.hatchStrokeBudget();
         assertFalse(hatch.isEmpty());
         assertTrue("hatch must respect its stroke budget, got " + hatch.size(),
                 hatch.size() <= cap);
+    }
+
+    @Test
+    public void hatchStaysNearTheFinishedOutlines() {
+        int size = 300;
+        int[] gray = new int[size * size];
+        java.util.Arrays.fill(gray, 60);
+        byte[] edges = new byte[size * size];
+        java.util.Arrays.fill(edges, (byte) 1);
+        // One small square outline: everything far away from it is background.
+        java.util.ArrayList<float[]> outlines = new java.util.ArrayList<>();
+        outlines.add(new float[]{40, 40, 120, 40, 120, 120, 40, 120, 40, 40});
+
+        ArrayList<float[]> hatch = HatchGenerator.generate(gray, size, size, edges,
+                fullSettings(), 1f, outlines);
+
+        assertFalse("the outlined shape should be shaded", hatch.isEmpty());
+        for (float[] stroke : hatch) {
+            for (int i = 0; i + 1 < stroke.length; i += 2) {
+                assertTrue("hatch must not drift into the empty background, point="
+                                + stroke[i] + "," + stroke[i + 1],
+                        stroke[i] < 220 && stroke[i + 1] < 220);
+            }
+        }
     }
 
     @Test

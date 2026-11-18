@@ -151,6 +151,42 @@ public final class EdgeDetector {
     }
 
     /**
+     * Robust noise estimate of a greyscale image: the median absolute difference
+     * of neighbouring pixels, scaled to a Gaussian sigma. Unlike the mean it is
+     * not inflated by the handful of real edges in the frame, so JPEG grain and
+     * sensor noise can be measured even in a picture full of lines.
+     */
+    public static float noiseLevel(int[] gray, int width, int height) {
+        if (gray == null || width < 4 || height < 2) {
+            return 0f;
+        }
+        int[] histogram = new int[256];
+        int samples = 0;
+        for (int y = 0; y < height; y += 2) {
+            int row = y * width;
+            for (int x = 0; x + 1 < width; x += 2) {
+                int difference = Math.abs(gray[row + x] - gray[row + x + 1]);
+                histogram[difference > 255 ? 255 : difference]++;
+                samples++;
+            }
+        }
+        if (samples == 0) {
+            return 0f;
+        }
+        int median = 0;
+        int accumulated = 0;
+        for (int value = 0; value < histogram.length; value++) {
+            accumulated += histogram[value];
+            if (accumulated * 2 >= samples) {
+                median = value;
+                break;
+            }
+        }
+        // median|a-b| ~= 0.954 sigma for independent Gaussian noise
+        return median * 1.048f;
+    }
+
+    /**
      * Full edge mask: Sobel gradients, sector non-maximum suppression,
      * percentile based dual thresholds, hysteresis, then connected-component
      * despeckling.
