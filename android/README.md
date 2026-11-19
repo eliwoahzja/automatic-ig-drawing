@@ -1,57 +1,50 @@
-# Android AI drawing
+# Auto Sketch (Android)
 
-## What changed
+Turns any image into clean strokes and draws them on Instagram's canvas (or any drawing app)
+through accessibility gestures. No root, no APK modification.
 
-The Android version has two AI-assisted workflows in addition to the existing edge and color tracing engine.
+## AI artist (Gemini, runs straight from the phone)
 
-### AI Enhance: private, on-device
+There is no server to deploy. Paste your own Gemini API key in the app and the phone talks
+directly to Google.
 
-Press **Generate sketch**, then **AI Enhance**.
+1. Create a free key at https://aistudio.google.com
+2. Open **AI artist → Gemini key & model** and paste it. It is stored privately on the device and is
+   sent only to Google, only when you press **Refine** or **Draw**.
+3. Pick a model: **3.5 Flash** (`gemini-3.5-flash`, most accurate) or **Flash-Lite**
+   (`gemini-3.1-flash-lite`, faster and cheaper). If the chosen model is busy, out of quota or
+   unavailable, the other one is tried automatically.
 
-Two local trained machine-learning models run on the source image:
-- Google ML Kit Text Recognition v2 detects text lines and their bounding boxes.
-- Google ML Kit Object Detection detects candidate objects and their bounding boxes.
+### Refine
+Press **Generate sketch** first. Gemini then sees the original picture plus a numbered overlay of
+the traced lines and returns:
+- which lines are noise (texture, glitter, shadows, doubled outlines, scribbles) and should go,
+- every line of lettering, transcribed exactly with its box. The app re-typesets it as clean
+  vector lettering, so text is readable instead of scribbled,
+- a few extra strokes for important features the trace missed.
 
-The app traces object crops at Ultra detail, filters redundant paths, and reconstructs recognized text as vector lettering inside the recognized text boxes. The resulting strokes replace the original preview. Your image does not leave the phone when you use AI Enhance. Recognized words are copied into the editable lettering field, so review the results before drawing.
+The accurate edge trace is kept, so lines stay exactly on the picture.
 
-These generic models do not guarantee that every cartoon, anime character, or stylized title will be recognized. Keep the normal **Generate sketch** option available as a fallback.
+### Draw
+Gemini plans the whole line art itself in one of three styles (**Outline**, **Detailed**,
+**Minimal**). The strokes are smoothed with Catmull-Rom curves and then snapped onto the nearest
+traced edge, so the AI decides what to draw and the trace decides where each line sits. Lettering is
+transcribed and typeset by the app, never drawn freehand. Use the optional note to steer it
+("focus on the face"). Draw can take up to a minute; Minimal is the quickest.
 
-### AI Draw: optional private cloud
+### On-device enhance
+The older offline option (ML Kit text and object detection) is still available as a small link
+under the AI card. Nothing leaves the phone.
 
-Press **AI Draw** to use an optional two-stage cloud line-art service:
-1. An AI image analyst describes important shapes, details, and legible text.
-2. An AI stroke planner uses that analysis plus the original image to return normalized polylines.
+## Notes
+- Charges, if any, come from your own Gemini key and quota.
+- AI strokes are approximate illustrations. Always check the preview before drawing.
+- AI output is monochrome line art. Color mode keeps using the guided palette workflow.
+- Passing compilation does not prove that Instagram accepts all gestures on your device.
 
-The app validates and previews the returned strokes before you select the drawing area.
+## Build and tests
+GitHub Actions runs the Android unit tests (`gradle testDebugUnitTest`) and builds a debug APK.
 
-AI Draw is **not usable until you deploy and configure the private server**. It is not active by default and does not upload images automatically. No AI provider key is stored in the APK.
+### API key storage
 
-#### Deploy the backend
-
-The repository contains a Vercel-compatible serverless function at `api/ai-draw.js`.
-
-Deploy the repository to a private Vercel project. Configure the following server environment variables:
-
-- `GEMINI_API_KEY` : the Gemini API key. Set this only in Vercel environment settings.
-- `AI_DRAW_ACCESS_TOKEN` : a long, random secret that restricts access to your endpoint.
-- `AI_MODEL` : optional Gemini vision model (defaults to `gemini-2.5-flash`).
-
-Deploy the backend and confirm the function is available at:
-
-`https://YOUR-DEPLOYMENT.vercel.app/api/ai-draw`
-
-In Android, open **Adjust drawing & lettering**, then enter the HTTPS URL. Enter the private backend access token in the separate field. Never enter your Gemini provider key into the Android app. The private token is kept only in current UI memory, while the endpoint URL is saved locally.
-
-The AI backend requires an internet connection and sends the selected compressed image to the AI service only when you press AI Draw. Provider charges apply to the configured server. Protect access, monitor usage, and restrict public deployment.
-
-### Drawing restrictions
-
-Both outputs use the existing draggable, resizable drawing-area overlay and Android accessibility gestures. Automated strokes remain limited to the selected drawing rectangle. Cloud AI drawing paths are approximate illustrations, not pixel-accurate vectorization. Review the preview before drawing.
-
-Color rendering continues to use the existing guided manual palette workflow. AI Draw currently creates monochrome line strokes rather than automatic multi-color fills.
-
-### Builds and tests
-
-GitHub Actions runs Android unit tests and compiles a debug APK. Cloud AI server tests run separately in the same workflow.
-
-Passing compilation does not prove that Instagram accepts all gestures on your device.
+Gemini keys are encrypted with Android Keystore AES-GCM and migrated from older plain preferences when present. The key is sent only to the Google Gemini HTTPS endpoint when Refine or Draw is used. If secure storage is unavailable, the key is not saved to device preferences.

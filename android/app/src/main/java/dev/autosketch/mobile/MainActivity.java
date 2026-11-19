@@ -4,52 +4,73 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
-import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.Settings;
+import android.text.Editable;
+import android.text.InputType;
+import android.text.TextWatcher;
 import android.view.Gravity;
 import android.view.View;
-import android.widget.LinearLayout;
 import android.widget.EditText;
-import android.widget.SeekBar;
-import android.text.InputType;
+import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.SeekBar;
 import android.widget.TextView;
 import java.io.InputStream;
 
-/** Image selection, sketch generation, preview and entry points to the overlay. */
+/** Image selection, sketch generation, AI drawing and entry points to the overlay. */
 public class MainActivity extends Activity {
 
     private static final int REQUEST_IMAGE = 1;
 
-    private static final int SURFACE = 0xFF101218;
-    private static final int CARD = 0xFF1B1E27;
-    private static final int CHIP = 0xFF222630;
-    private static final int ACCENT = 0xFF81BFFF;
-    private static final int ACCENT_SOFT = 0x334B9EFF;
-    private static final int TEXT = 0xFFF3F5F9;
-    private static final int MUTED = 0xFFA0A4B3;
+    // Creamy, minimal palette: warm paper, soft latte chips, dark espresso ink.
+    private static final int BG = 0xFFF5EEE0;
+    private static final int CARD = 0xFFFCF8F0;
+    private static final int CHIP = 0xFFEDE4D2;
+    private static final int BORDER = 0xFFE4D9C4;
+    private static final int INK = 0xFF2B2621;
+    private static final int MUTED = 0xFF8D8272;
+    private static final int LATTE = 0xFFE6D3B0;
+    private static final int LATTE_LINE = 0xFFD5BD90;
+    private static final int TERRACOTTA = 0xFFC77B52;
+    private static final int ON_DARK = 0xFFFCF8F0;
+    private static final int GOOD = 0xFF4F8A5B;
+    private static final int WARN = 0xFFC2693B;
 
     private SketchPreviewView preview;
     private TextView status;
     private TextView meta;
     private TextView accessibilityState;
     private TextView generateButton;
+    private TextView refineButton;
+    private TextView drawButton;
     private TextView centerToggle;
     private EditText captionInput;
-    private EditText aiEndpointInput;
-    private EditText aiAccessInput;
+    private EditText aiKeyInput;
+    private EditText aiFocusInput;
+    private LinearLayout geminiPanel;
+    private TextView geminiToggle;
     private boolean aiBusy;
     private LinearLayout modeChips;
     private LinearLayout detailChips;
     private LinearLayout fitChips;
+    private LinearLayout styleChips;
+    private LinearLayout modelChips;
     private DrawingSettings settings;
     private Bitmap source;
     private SketchSession.Token token;
+
+    private interface Pick {
+        void picked(int index);
+    }
+
+    private interface SettingValue {
+        void changed(int value);
+    }
 
     private int dp(float value) {
         return Math.round(value * getResources().getDisplayMetrics().density);
@@ -58,8 +79,10 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(0xFF0B0C10);
-        getWindow().setNavigationBarColor(0xFF0B0C10);
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        getWindow().getDecorView().setSystemUiVisibility(
+                View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         settings = SettingsStore.load(this);
         SketchSession.updateSettings(settings);
         source = SketchSession.source();
@@ -74,7 +97,7 @@ public class MainActivity extends Activity {
         if (sketch.isEmpty()) {
             meta.setText(source == null ? "No image loaded" : "Image ready · not traced yet");
         } else {
-            meta.setText(sketch.strokes.size() + " contours · " + sketch.colorLayers.size()
+            meta.setText(sketch.strokes.size() + " strokes · " + sketch.colorLayers.size()
                     + " color layers · " + sketch.edgePixels + " edge pixels");
         }
     }
@@ -83,102 +106,237 @@ public class MainActivity extends Activity {
 
     private void buildUi() {
         ScrollView scroll = new ScrollView(this);
-        scroll.setBackgroundColor(0xFF090B10);
+        scroll.setBackgroundColor(BG);
         scroll.setFillViewport(true);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(18), dp(26), dp(18), dp(34));
+        root.setPadding(dp(22), dp(30), dp(22), dp(40));
         scroll.addView(root);
 
-        TextView title = label("Auto Sketch", 30f, TEXT);
-        title.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        TextView title = label("Auto Sketch", 34f, INK);
+        title.setTypeface(Typeface.create("serif", Typeface.NORMAL));
         root.addView(title);
-        TextView subtitle = label("Turn images into clean strokes and color layers.",
-                12.5f, MUTED);
+        TextView subtitle = label("Turn any picture into clean, gentle strokes.", 13f, MUTED);
         subtitle.setPadding(0, dp(8), 0, dp(22));
         root.addView(subtitle);
 
         preview = new SketchPreviewView(this);
-        LinearLayout.LayoutParams previewParams = new LinearLayout.LayoutParams(-1, dp(336));
-        root.addView(preview, previewParams);
+        preview.setElevation(dp(1.5f));
+        root.addView(preview, new LinearLayout.LayoutParams(-1, dp(340)));
 
         LinearLayout sourceRow = new LinearLayout(this);
         sourceRow.setOrientation(LinearLayout.HORIZONTAL);
-        sourceRow.setPadding(0, dp(14), 0, 0);
-        TextView choose = pill("Choose image", false, false);
+        sourceRow.setPadding(0, dp(16), 0, 0);
+        TextView choose = pill("Choose image", false);
         choose.setContentDescription("Choose an image");
-        choose.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                pickImage();
-            }
-        });
-        sourceRow.addView(choose, weighted(dp(6)));
-        generateButton = pill("Generate sketch", true, false);
+        choose.setOnClickListener(v -> pickImage());
+        sourceRow.addView(choose, weighted(dp(8), 48));
+        generateButton = pill("Generate sketch", true);
         generateButton.setContentDescription("Generate sketch");
-        generateButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                generate();
-            }
-        });
-        sourceRow.addView(generateButton, weighted(dp(6)));
+        generateButton.setOnClickListener(v -> generate());
+        sourceRow.addView(generateButton, weighted(dp(8), 48));
         root.addView(sourceRow);
 
-        LinearLayout aiRow = new LinearLayout(this);
-        aiRow.setOrientation(LinearLayout.HORIZONTAL);
-        aiRow.setPadding(0, dp(10), 0, 0);
-        TextView enhance = pill("AI Enhance", false, false);
-        enhance.setContentDescription("Improve details using on-device vision models");
-        enhance.setOnClickListener(v -> enhanceWithAi());
-        aiRow.addView(enhance, weighted(dp(6)));
-        TextView aiDraw = pill("AI Draw", false, false);
-        aiDraw.setContentDescription("Generate extra paths using a connected AI drawer server");
-        aiDraw.setOnClickListener(v -> drawWithAi());
-        aiRow.addView(aiDraw, weighted(dp(6)));
-        root.addView(aiRow);
-        TextView aiHint = label("AI Enhance works on-device. AI Draw uses your optional private server.",
-                10f, MUTED);
-        aiHint.setPadding(0, dp(6), 0, 0);
-        root.addView(aiHint);
-
-        status = label("Choose an image to begin", 11f, MUTED);
-        status.setPadding(0, dp(12), 0, 0);
+        status = label("Choose an image to begin", 12f, INK);
+        status.setPadding(dp(2), dp(14), 0, 0);
+        status.setLineSpacing(dp(2), 1f);
         root.addView(status);
-        meta = label("", 10f, 0x99FFFFFF);
-        meta.setPadding(0, dp(3), 0, dp(6));
+        meta = label("", 10.5f, MUTED);
+        meta.setPadding(dp(2), dp(4), 0, dp(4));
         root.addView(meta);
 
+        buildGeminiCard(root);
+
         root.addView(section("Render mode"));
-        modeChips = segmented(DrawingSettings.MODE_NAMES, settings.renderMode, 2);
+        modeChips = segmented(DrawingSettings.MODE_NAMES, settings.renderMode, index -> {
+            settings.renderMode = index;
+            styleSegments(modeChips, index);
+            persist(true);
+        });
         root.addView(modeChips);
-        TextView modeHint = label("Color uses guided brush changes. Trace fills first, then outlines.", 10f, MUTED);
-        modeHint.setPadding(0, dp(6), 0, 0);
+        TextView modeHint = label("Color uses guided brush changes. Trace fills first, then outlines.",
+                10.5f, MUTED);
+        modeHint.setPadding(dp(2), dp(8), 0, 0);
         root.addView(modeHint);
 
-        TextView advancedToggle = pill("Adjust drawing & lettering   +", false, false);
-        LinearLayout.LayoutParams advancedToggleParams =
-                new LinearLayout.LayoutParams(-1, dp(50));
-        advancedToggleParams.topMargin = dp(18);
-        root.addView(advancedToggle, advancedToggleParams);
+        buildAdjustments(root);
 
-        LinearLayout advanced = new LinearLayout(this);
+        root.addView(section("Automation"));
+        LinearLayout automationRow = new LinearLayout(this);
+        automationRow.setOrientation(LinearLayout.HORIZONTAL);
+        TextView accessibility = pill("Accessibility", false);
+        accessibility.setContentDescription("Open accessibility settings");
+        accessibility.setOnClickListener(v ->
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        automationRow.addView(accessibility, weighted(dp(8), 46));
+        TextView floating = pill("Floating controls", true);
+        floating.setContentDescription("Open floating controls");
+        floating.setOnClickListener(v -> openFloatingControls());
+        automationRow.addView(floating, weighted(dp(8), 46));
+        root.addView(automationRow);
+
+        accessibilityState = label("", 10.5f, MUTED);
+        accessibilityState.setPadding(dp(2), dp(12), 0, 0);
+        root.addView(accessibilityState);
+
+        TextView hint = label("1 · Turn on the accessibility service\n2 · Choose an image and generate\n"
+                + "3 · Open the floating controls and select the drawing area on Instagram\n"
+                + "4 · Start drawing. Pick a thin brush first; nothing is tapped outside your rectangle.",
+                10.5f, MUTED);
+        hint.setPadding(dp(2), dp(14), 0, 0);
+        hint.setLineSpacing(dp(4), 1f);
+        root.addView(hint);
+
+        setContentView(scroll);
+    }
+
+    private void buildGeminiCard(LinearLayout root) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(dp(18), dp(16), dp(18), dp(18));
+        card.setBackground(surface(CARD, 26, 1f, BORDER));
+        card.setElevation(dp(1.5f));
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(-1, -2);
+        cardParams.topMargin = dp(20);
+        root.addView(card, cardParams);
+
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = label("AI artist", 17f, INK);
+        name.setTypeface(Typeface.create("serif", Typeface.NORMAL));
+        header.addView(name, new LinearLayout.LayoutParams(0, -2, 1f));
+        TextView badge = label("Gemini", 10.5f, TERRACOTTA);
+        badge.setPadding(dp(10), dp(5), dp(10), dp(5));
+        badge.setBackground(surface(0x22C77B52, 12, 0f, 0));
+        header.addView(badge);
+        card.addView(header);
+
+        TextView blurb = label("Refine keeps your accurate trace and lets Gemini clean it up and read the "
+                + "lettering. Draw lets Gemini plan the line art itself.", 11f, MUTED);
+        blurb.setPadding(0, dp(8), 0, dp(14));
+        blurb.setLineSpacing(dp(3), 1f);
+        card.addView(blurb);
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        refineButton = pill("Refine", false);
+        refineButton.setContentDescription("Refine the sketch with Gemini");
+        refineButton.setOnClickListener(v -> runGemini(true));
+        actions.addView(refineButton, weighted(dp(8), 48));
+        drawButton = pill("Draw", false);
+        drawButton.setTextColor(ON_DARK);
+        drawButton.setBackground(ripple(TERRACOTTA, 18));
+        drawButton.setContentDescription("Let Gemini draw the picture");
+        drawButton.setOnClickListener(v -> runGemini(false));
+        actions.addView(drawButton, weighted(dp(8), 48));
+        card.addView(actions);
+
+        card.addView(section("Drawing style", 18));
+        styleChips = segmented(DrawingSettings.AI_STYLE_NAMES, settings.aiStyle, index -> {
+            settings.aiStyle = index;
+            styleSegments(styleChips, index);
+            persistAi();
+        });
+        card.addView(styleChips);
+
+        aiFocusInput = field("Optional note, e.g. focus on the face", false);
+        aiFocusInput.setText(settings.aiFocus);
+        aiFocusInput.addTextChangedListener(new SimpleWatcher() {
+            @Override public void changed(String value) {
+                settings.aiFocus = value;
+                persistAi();
+            }
+        });
+        LinearLayout.LayoutParams focusParams = new LinearLayout.LayoutParams(-1, dp(50));
+        focusParams.topMargin = dp(12);
+        card.addView(aiFocusInput, focusParams);
+
+        geminiToggle = pill(settings.geminiApiKey.isEmpty() ? "Gemini key & model   +" : "Gemini key & model   ·   saved",
+                false);
+        geminiToggle.setTextSize(12f);
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(-1, dp(44));
+        toggleParams.topMargin = dp(12);
+        card.addView(geminiToggle, toggleParams);
+
+        geminiPanel = new LinearLayout(this);
+        geminiPanel.setOrientation(LinearLayout.VERTICAL);
+        geminiPanel.setPadding(0, dp(4), 0, 0);
+        geminiPanel.setVisibility(settings.geminiApiKey.isEmpty() ? View.VISIBLE : View.GONE);
+        card.addView(geminiPanel);
+        if (settings.geminiApiKey.isEmpty()) geminiToggle.setText("Gemini key & model   −");
+        geminiToggle.setOnClickListener(v -> setGeminiPanelOpen(geminiPanel.getVisibility() != View.VISIBLE));
+
+        geminiPanel.addView(section("Model", 14));
+        modelChips = segmented(DrawingSettings.GEMINI_MODEL_NAMES, settings.geminiModel, index -> {
+            settings.geminiModel = index;
+            styleSegments(modelChips, index);
+            persistAi();
+        });
+        geminiPanel.addView(modelChips);
+        TextView modelHint = label("3.5 Flash is the most accurate. Flash-Lite is faster and cheaper. "
+                + "If one is busy, the other is used automatically.", 10.5f, MUTED);
+        modelHint.setPadding(dp(2), dp(8), 0, 0);
+        modelHint.setLineSpacing(dp(3), 1f);
+        geminiPanel.addView(modelHint);
+
+        geminiPanel.addView(section("API key", 14));
+        aiKeyInput = field("Paste your Gemini API key", true);
+        aiKeyInput.setText(settings.geminiApiKey);
+        aiKeyInput.addTextChangedListener(new SimpleWatcher() {
+            @Override public void changed(String value) {
+                settings.geminiApiKey = value.trim();
+            }
+        });
+        aiKeyInput.setOnFocusChangeListener((view, focused) -> {
+            if (!focused) persistAi();
+        });
+        geminiPanel.addView(aiKeyInput, new LinearLayout.LayoutParams(-1, dp(50)));
+        TextView keyHint = label("Create a free key at aistudio.google.com. It stays on this phone and is "
+                + "sent only to Google when you press Refine or Draw.", 10.5f, MUTED);
+        keyHint.setPadding(dp(2), dp(8), 0, 0);
+        keyHint.setLineSpacing(dp(3), 1f);
+        geminiPanel.addView(keyHint);
+
+        TextView onDevice = label("Or use on-device enhance (no internet)", 11f, MUTED);
+        onDevice.setGravity(Gravity.CENTER);
+        onDevice.setPadding(0, dp(14), 0, dp(4));
+        onDevice.setOnClickListener(v -> enhanceOnDevice());
+        card.addView(onDevice, new LinearLayout.LayoutParams(-1, dp(40)));
+    }
+
+    private void setGeminiPanelOpen(boolean open) {
+        geminiPanel.setVisibility(open ? View.VISIBLE : View.GONE);
+        geminiToggle.setText(open ? "Gemini key & model   −"
+                : (settings.geminiApiKey.isEmpty() ? "Gemini key & model   +"
+                : "Gemini key & model   ·   saved"));
+    }
+
+    private void buildAdjustments(LinearLayout root) {
+        final TextView toggle = pill("Adjust drawing & lettering   +", false);
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(-1, dp(50));
+        toggleParams.topMargin = dp(22);
+        root.addView(toggle, toggleParams);
+
+        final LinearLayout advanced = new LinearLayout(this);
         advanced.setOrientation(LinearLayout.VERTICAL);
-        advanced.setPadding(dp(14), dp(5), dp(14), dp(16));
-        advanced.setBackground(surface(CARD, 20, 1f, 0x1FFFFFFF));
+        advanced.setPadding(dp(16), dp(4), dp(16), dp(18));
+        advanced.setBackground(surface(CARD, 24, 1f, BORDER));
         advanced.setVisibility(View.GONE);
         LinearLayout.LayoutParams advancedParams = new LinearLayout.LayoutParams(-1, -2);
-        advancedParams.topMargin = dp(8);
+        advancedParams.topMargin = dp(10);
         root.addView(advanced, advancedParams);
-        advancedToggle.setOnClickListener(v -> {
+        toggle.setOnClickListener(v -> {
             boolean opening = advanced.getVisibility() != View.VISIBLE;
             advanced.setVisibility(opening ? View.VISIBLE : View.GONE);
-            advancedToggle.setText(opening ? "Close adjustments   −"
-                    : "Adjust drawing & lettering   +");
+            toggle.setText(opening ? "Close adjustments   −" : "Adjust drawing & lettering   +");
         });
 
         advanced.addView(section("Detail level"));
-        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, 0);
+        detailChips = segmented(DrawingSettings.DETAIL_NAMES, settings.detailLevel, index -> {
+            settings.detailLevel = index;
+            styleSegments(detailChips, index);
+            persist(true);
+        });
         advanced.addView(detailChips);
 
         advanced.addView(section("Color coverage"));
@@ -186,166 +344,77 @@ public class MainActivity extends Activity {
                 10.5f, MUTED);
         colorHint.setPadding(0, 0, 0, dp(5));
         advanced.addView(colorHint);
-        advanced.addView(settingSlider("Fill density", 15, 95, settings.colorDensity, new SettingValue() {
-            @Override public void changed(int value) {
-                settings.colorDensity = value;
-            }
-        }));
+        advanced.addView(settingSlider("Fill density", 15, 95, settings.colorDensity,
+                value -> settings.colorDensity = value));
 
         advanced.addView(section("Canvas fit"));
-        fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, 1);
+        fitChips = segmented(DrawingSettings.FIT_NAMES, settings.fitMode, index -> {
+            settings.fitMode = index;
+            styleSegments(fitChips, index);
+            persist(false);
+        });
         advanced.addView(fitChips);
 
-        centerToggle = toggle("Center image", settings.centerImage);
-        centerToggle.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                settings.centerImage = !settings.centerImage;
-                styleToggle(centerToggle, settings.centerImage);
-                persist(true);
-            }
+        centerToggle = label("", 11.5f, MUTED);
+        centerToggle.setGravity(Gravity.CENTER);
+        styleToggle(centerToggle, settings.centerImage);
+        centerToggle.setOnClickListener(v -> {
+            settings.centerImage = !settings.centerImage;
+            styleToggle(centerToggle, settings.centerImage);
+            persist(true);
         });
-        advanced.addView(centerToggle, new LinearLayout.LayoutParams(-1, dp(42)));
+        LinearLayout.LayoutParams centerParams = new LinearLayout.LayoutParams(-1, dp(44));
+        centerParams.topMargin = dp(8);
+        advanced.addView(centerToggle, centerParams);
 
         advanced.addView(section("Readable lettering"));
-        TextView letteringHint = label("Type the words exactly to replace distorted lettering. Set the position in the image, then regenerate.",
+        TextView letteringHint = label("Type the words exactly to replace distorted lettering. Set the "
+                + "position in the image, then regenerate. The AI artist fills this in on its own.",
                 10.5f, MUTED);
         letteringHint.setPadding(0, 0, 0, dp(8));
         letteringHint.setLineSpacing(dp(3), 1f);
         advanced.addView(letteringHint);
-        captionInput = new EditText(this);
+        captionInput = field("Optional text, including line breaks", false);
         captionInput.setSingleLine(false);
-        captionInput.setInputType(android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        captionInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        captionInput.setGravity(Gravity.TOP | Gravity.START);
         captionInput.setText(settings.captionText);
-        captionInput.setTextColor(TEXT);
-        captionInput.setHintTextColor(MUTED);
-        captionInput.setHint("Optional text, including line breaks");
-        captionInput.setTextSize(13f);
-        captionInput.setPadding(dp(14), dp(12), dp(14), dp(12));
-        captionInput.setBackground(surface(CARD, 16, 1f, 0x22FFFFFF));
-        advanced.addView(captionInput, new LinearLayout.LayoutParams(-1, dp(90)));
-        advanced.addView(settingSlider("Text position X", 10, 90, settings.captionXPercent, new SettingValue() {
-            @Override public void changed(int value) {
-                settings.captionXPercent = value;
-            }
-        }));
-        advanced.addView(settingSlider("Text position Y", 10, 90, settings.captionYPercent, new SettingValue() {
-            @Override public void changed(int value) {
-                settings.captionYPercent = value;
-            }
-        }));
-        advanced.addView(settingSlider("Text size", 3, 18, settings.captionSizePercent, new SettingValue() {
-            @Override public void changed(int value) {
-                settings.captionSizePercent = value;
-            }
-        }));
-        TextView applyText = pill("Apply lettering + regenerate", false, false);
+        advanced.addView(captionInput, new LinearLayout.LayoutParams(-1, dp(92)));
+        advanced.addView(settingSlider("Text position X", 10, 90, settings.captionXPercent,
+                value -> settings.captionXPercent = value));
+        advanced.addView(settingSlider("Text position Y", 10, 90, settings.captionYPercent,
+                value -> settings.captionYPercent = value));
+        advanced.addView(settingSlider("Text size", 3, 18, settings.captionSizePercent,
+                value -> settings.captionSizePercent = value));
+        TextView applyText = pill("Apply lettering + regenerate", false);
         LinearLayout.LayoutParams applyParams = new LinearLayout.LayoutParams(-1, dp(48));
-        applyParams.topMargin = dp(8);
+        applyParams.topMargin = dp(10);
         advanced.addView(applyText, applyParams);
-        applyText.setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View v) {
-                settings.captionText = captionInput.getText().toString();
-                persist(true);
-                generate();
-            }
+        applyText.setOnClickListener(v -> {
+            settings.captionText = captionInput.getText().toString();
+            persist(true);
+            generate();
         });
-
-        advanced.addView(section("AI Drawer server"));
-        TextView apiHint = label("Optional HTTPS endpoint. Only AI Draw uploads an image. Never enter an OpenAI API key here.",
-                10.5f, MUTED);
-        apiHint.setPadding(0, 0, 0, dp(8));
-        advanced.addView(apiHint);
-        aiEndpointInput = new EditText(this);
-        aiEndpointInput.setSingleLine(true);
-        aiEndpointInput.setText(settings.aiEndpointUrl);
-        aiEndpointInput.setHint("https://your-server.vercel.app/api/ai-draw");
-        aiEndpointInput.setTextColor(TEXT);
-        aiEndpointInput.setHintTextColor(MUTED);
-        aiEndpointInput.setTextSize(12f);
-        aiEndpointInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_URI);
-        aiEndpointInput.setPadding(dp(12), dp(10), dp(12), dp(10));
-        aiEndpointInput.setBackground(surface(CARD, 14, 1f, 0x22FFFFFF));
-        advanced.addView(aiEndpointInput, new LinearLayout.LayoutParams(-1, dp(52)));
-        aiAccessInput = new EditText(this);
-        aiAccessInput.setSingleLine(true);
-        aiAccessInput.setHint("Private backend access token (optional)");
-        aiAccessInput.setTextColor(TEXT);
-        aiAccessInput.setHintTextColor(MUTED);
-        aiAccessInput.setInputType(InputType.TYPE_CLASS_TEXT |
-                InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        aiAccessInput.setTextSize(12f);
-        aiAccessInput.setPadding(dp(12), dp(10), dp(12), dp(10));
-        aiAccessInput.setBackground(surface(CARD, 14, 1f, 0x22FFFFFF));
-        LinearLayout.LayoutParams privateParams = new LinearLayout.LayoutParams(-1, dp(52));
-        privateParams.topMargin = dp(8);
-        advanced.addView(aiAccessInput, privateParams);
-
-        root.addView(section("Automation"));
-        LinearLayout automationRow = new LinearLayout(this);
-        automationRow.setOrientation(LinearLayout.HORIZONTAL);
-        automationRow.setPadding(0, dp(8), 0, 0);
-        TextView accessibility = pill("Accessibility", false, true);
-        accessibility.setContentDescription("Open accessibility settings");
-        accessibility.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
-            }
-        });
-        automationRow.addView(accessibility, weighted(dp(5)));
-        TextView floating = pill("Floating controls", true, true);
-        floating.setContentDescription("Open floating controls");
-        floating.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                openFloatingControls();
-            }
-        });
-        automationRow.addView(floating, weighted(dp(5)));
-        root.addView(automationRow);
-
-        accessibilityState = label("", 10f, MUTED);
-        accessibilityState.setPadding(0, dp(10), 0, 0);
-        root.addView(accessibilityState);
-
-        TextView hint = label(
-                "1 · Enable the accessibility service  2 · Choose an image and generate  3 · Open the "
-                        + "floating controls, select the drawing area on Instagram  4 · Start drawing. "
-                        + "Pick a thin brush in Instagram first; the app never taps anything outside "
-                        + "your selected rectangle.",
-                10f, 0x88FFFFFF);
-        hint.setPadding(0, dp(12), 0, 0);
-        hint.setLineSpacing(dp(3), 1f);
-        root.addView(hint);
-
-        setContentView(scroll);
     }
 
-    private interface SettingValue {
-        void changed(int value);
-    }
-
-    private View settingSlider(String title, int min, int max, int value,
-                               final SettingValue callback) {
+    private View settingSlider(String title, int min, int max, int value, final SettingValue callback) {
         LinearLayout block = new LinearLayout(this);
         block.setOrientation(LinearLayout.VERTICAL);
-        block.setPadding(0, dp(5), 0, dp(3));
+        block.setPadding(0, dp(6), 0, dp(3));
         LinearLayout row = new LinearLayout(this);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        TextView name = label(title, 12f, MUTED);
-        row.addView(name, new LinearLayout.LayoutParams(0, dp(22), 1f));
-        final TextView number = label(String.valueOf(value), 12f, TEXT);
+        row.addView(label(title, 12f, MUTED), new LinearLayout.LayoutParams(0, dp(22), 1f));
+        final TextView number = label(String.valueOf(value), 12f, INK);
         row.addView(number);
         block.addView(row);
         SeekBar slider = new SeekBar(this);
         slider.setMin(min);
         slider.setMax(max);
         slider.setProgress(value);
-        slider.setProgressTintList(ColorStateList.valueOf(ACCENT));
-        slider.setThumbTintList(ColorStateList.valueOf(ACCENT));
+        slider.setProgressTintList(ColorStateList.valueOf(TERRACOTTA));
+        slider.setThumbTintList(ColorStateList.valueOf(TERRACOTTA));
+        slider.setProgressBackgroundTintList(ColorStateList.valueOf(LATTE));
         slider.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar bar, int progress, boolean fromUser) {
                 if (!fromUser) return;
@@ -356,12 +425,23 @@ public class MainActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar bar) {}
             @Override public void onStopTrackingTouch(SeekBar bar) {}
         });
-        block.addView(slider, new LinearLayout.LayoutParams(-1, dp(35)));
+        block.addView(slider, new LinearLayout.LayoutParams(-1, dp(36)));
         return block;
     }
 
-    private LinearLayout.LayoutParams weighted(int margin) {
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1f);
+    // ----------------------------------------------------------- UI helpers
+
+    private abstract static class SimpleWatcher implements TextWatcher {
+        abstract void changed(String value);
+        @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
+        @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
+        @Override public void afterTextChanged(Editable s) {
+            changed(s.toString());
+        }
+    }
+
+    private LinearLayout.LayoutParams weighted(int margin, int heightDp) {
+        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(heightDp), 1f);
         params.leftMargin = margin / 2;
         params.rightMargin = margin / 2;
         return params;
@@ -377,10 +457,29 @@ public class MainActivity extends Activity {
     }
 
     private TextView section(String text) {
+        return section(text, 24);
+    }
+
+    private TextView section(String text, int topDp) {
         TextView view = label(text.toUpperCase(), 10f, MUTED);
-        view.setLetterSpacing(0.12f);
-        view.setPadding(0, dp(22), 0, dp(10));
+        view.setLetterSpacing(0.14f);
+        view.setPadding(dp(2), dp(topDp), 0, dp(10));
         return view;
+    }
+
+    private EditText field(String hint, boolean secret) {
+        EditText input = new EditText(this);
+        input.setSingleLine(true);
+        input.setHint(hint);
+        input.setTextColor(INK);
+        input.setHintTextColor(0xFFB3A892);
+        input.setTextSize(13f);
+        input.setInputType(secret
+                ? InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD
+                : InputType.TYPE_CLASS_TEXT);
+        input.setPadding(dp(16), dp(10), dp(16), dp(10));
+        input.setBackground(surface(CHIP, 16, 0f, 0));
+        return input;
     }
 
     private GradientDrawable surface(int color, float radiusDp, float strokeDp, int strokeColor) {
@@ -394,78 +493,59 @@ public class MainActivity extends Activity {
     }
 
     private RippleDrawable ripple(int background, float radiusDp) {
-        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF),
+        return new RippleDrawable(ColorStateList.valueOf(0x22000000),
                 surface(background, radiusDp, 0f, 0),
                 surface(0xFFFFFFFF, radiusDp, 0f, 0));
     }
 
-    private TextView pill(String text, boolean primary, boolean compact) {
-        TextView view = label(text, compact ? 12f : 12.5f, primary ? 0xFF06131F : TEXT);
+    private TextView pill(String text, boolean primary) {
+        TextView view = label(text, 13f, primary ? ON_DARK : INK);
         view.setGravity(Gravity.CENTER);
         view.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
-        if (primary) {
-            view.setBackground(ripple(ACCENT, 16));
-        } else {
-            view.setBackground(ripple(CHIP, 16));
-            view.setTextColor(TEXT);
-        }
+        view.setBackground(ripple(primary ? INK : CHIP, 18));
         return view;
     }
 
-    private LinearLayout segmented(final String[] labels, int selected, final int kind) {
+    private LinearLayout segmented(final String[] labels, int selected, final Pick pick) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
-        row.setPadding(0, dp(2), 0, dp(2));
         for (int i = 0; i < labels.length; i++) {
             final int index = i;
-            TextView chip = label(labels[i], 11.5f, MUTED);
+            TextView chip = label(labels[i], 12f, MUTED);
             chip.setGravity(Gravity.CENTER);
             LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, dp(42), 1f);
-            params.leftMargin = i == 0 ? 0 : dp(3);
+            params.leftMargin = i == 0 ? 0 : dp(6);
             row.addView(chip, params);
-            chip.setOnClickListener(new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
-                    if (kind == 0) {
-                        settings.detailLevel = index;
-                        styleSegments(detailChips, settings.detailLevel);
-                    } else if (kind == 1) {
-                        settings.fitMode = index;
-                        styleSegments(fitChips, settings.fitMode);
-                    } else {
-                        settings.renderMode = index;
-                        styleSegments(modeChips, settings.renderMode);
-                    }
-                    persist(kind != 1);
-                }
-            });
+            chip.setOnClickListener(v -> pick.picked(index));
         }
         styleSegments(row, selected);
         return row;
     }
 
     private void styleSegments(LinearLayout row, int selected) {
+        if (row == null) return;
         for (int i = 0; i < row.getChildCount(); i++) {
             TextView chip = (TextView) row.getChildAt(i);
             boolean active = i == selected;
-            chip.setTextColor(active ? ACCENT : MUTED);
-            chip.setBackground(active ? surface(ACCENT_SOFT, 13, 1f, 0x5562B0FF)
-                    : ripple(CHIP, 13));
+            chip.setTextColor(active ? INK : MUTED);
+            chip.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+            chip.setBackground(active ? surface(LATTE, 15, 1f, LATTE_LINE) : ripple(CHIP, 15));
         }
-    }
-
-    private TextView toggle(String text, boolean enabled) {
-        TextView view = label(text, 11f, MUTED);
-        view.setGravity(Gravity.CENTER);
-        styleToggle(view, enabled);
-        return view;
     }
 
     private void styleToggle(TextView view, boolean enabled) {
         view.setText(enabled ? "✓  Center image" : "Center image");
-        view.setTextColor(enabled ? ACCENT : MUTED);
-        view.setBackground(enabled ? surface(ACCENT_SOFT, 11, 1f, 0x557CC6FF)
-                : ripple(CHIP, 11));
+        view.setTextColor(enabled ? INK : MUTED);
+        view.setBackground(enabled ? surface(LATTE, 15, 1f, LATTE_LINE) : ripple(CHIP, 15));
+    }
+
+    private void setAiButtons(boolean enabled, String refineText, String drawText) {
+        refineButton.setEnabled(enabled);
+        drawButton.setEnabled(enabled);
+        refineButton.setAlpha(enabled ? 1f : .6f);
+        drawButton.setAlpha(enabled ? 1f : .6f);
+        refineButton.setText(refineText);
+        drawButton.setText(drawText);
     }
 
     // --------------------------------------------------------------- actions
@@ -495,8 +575,7 @@ public class MainActivity extends Activity {
             if (stream == null) {
                 throw new IllegalStateException("Unable to read the selected file");
             }
-            Bitmap decoded = SketchSession.loadSource(stream,
-                    SketchProcessor.MAX_SOURCE_DIMENSION);
+            Bitmap decoded = SketchSession.loadSource(stream, SketchProcessor.MAX_SOURCE_DIMENSION);
             if (decoded == null) {
                 throw new IllegalStateException("Unsupported image");
             }
@@ -507,21 +586,14 @@ public class MainActivity extends Activity {
             source = prepared;
             SketchSession.setSketch(Sketch.empty());
             aiBusy = false;
+            setAiButtons(true, "Refine", "Draw");
             preview.setSource(source);
             preview.setSketch(Sketch.empty(), settings);
             status.setText("Image loaded · tap Generate sketch");
-            meta.setText(decodedWidth(prepared) + " × " + decodedHeight(prepared) + " source");
+            meta.setText(prepared.getWidth() + " × " + prepared.getHeight() + " source");
         } catch (Exception exception) {
             status.setText("Unable to load image: " + exception.getMessage());
         }
-    }
-
-    private int decodedWidth(Bitmap bitmap) {
-        return bitmap == null ? 0 : bitmap.getWidth();
-    }
-
-    private int decodedHeight(Bitmap bitmap) {
-        return bitmap == null ? 0 : bitmap.getHeight();
     }
 
     private void generate() {
@@ -540,38 +612,81 @@ public class MainActivity extends Activity {
         meta.setText("");
         final DrawingSettings snapshot = settings.copy();
         final int canvasWidth = getResources().getDisplayMetrics().widthPixels;
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final SketchProcessor.Outcome outcome = SketchProcessor.process(source, snapshot,
-                        canvasWidth, active);
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (token != active) {
-                            return;
-                        }
-                        token = null;
-                        generateButton.setEnabled(true);
-                        generateButton.setText("Generate sketch");
-                        if (outcome.cancelled) {
-                            return;
-                        }
-                        SketchSession.setSketch(outcome.sketch);
-                        preview.setSketch(outcome.sketch, settings);
-                        status.setText(outcome.sketch.isEmpty()
-                                ? "No strokes detected · try a higher detail level"
-                                : "Sketch ready · " + outcome.durationMs + " ms");
-                        meta.setText(outcome.sketch.strokes.size() + " strokes · "
-                                + outcome.sketch.pointCount() + " points · "
-                                + outcome.sketch.edgePixels + " edge pixels");
-                    }
-                });
-            }
+        new Thread(() -> {
+            final SketchProcessor.Outcome outcome = SketchProcessor.process(source, snapshot,
+                    canvasWidth, active);
+            runOnUiThread(() -> {
+                if (token != active) {
+                    return;
+                }
+                token = null;
+                generateButton.setEnabled(true);
+                generateButton.setText("Generate sketch");
+                if (outcome.cancelled) {
+                    return;
+                }
+                SketchSession.setSketch(outcome.sketch);
+                preview.setSketch(outcome.sketch, settings);
+                status.setText(outcome.sketch.isEmpty()
+                        ? "No strokes detected · try a higher detail level"
+                        : "Sketch ready · " + outcome.durationMs + " ms");
+                meta.setText(outcome.sketch.strokes.size() + " strokes · "
+                        + outcome.sketch.pointCount() + " points · "
+                        + outcome.sketch.edgePixels + " edge pixels");
+            });
         }, "sketch-process").start();
     }
 
-    private void enhanceWithAi() {
+    /** Gemini: refine = curate the trace, draw = plan the whole line art. */
+    private void runGemini(final boolean refine) {
+        if (source == null || source.isRecycled()) {
+            status.setText("Choose an image first");
+            return;
+        }
+        if (aiBusy) return;
+        settings.geminiApiKey = aiKeyInput.getText().toString().trim();
+        if (settings.geminiApiKey.isEmpty()) {
+            setGeminiPanelOpen(true);
+            status.setText("Paste your Gemini API key to use the AI artist");
+            return;
+        }
+        final Sketch base = SketchSession.sketch();
+        if (refine && (base == null || base.isEmpty())) {
+            status.setText("Generate the base sketch first, then refine it");
+            return;
+        }
+        persistAi();
+        aiBusy = true;
+        setAiButtons(false, refine ? "Refining…" : "Drawing…", refine ? "Refine" : "Drawing…");
+        status.setText(refine
+                ? "Gemini is reviewing the trace and reading the lettering…"
+                : "Gemini is planning the drawing · this can take up to a minute");
+        meta.setText("");
+        final Bitmap requested = source;
+        final DrawingSettings snapshot = settings.copy();
+        GeminiArtist.Callback callback = (result, error) -> runOnUiThread(() -> {
+            aiBusy = false;
+            setAiButtons(true, "Refine", "Draw");
+            if (source != requested || isFinishing() || isDestroyed()) return;
+            if (result == null) {
+                status.setText("AI artist: " + error);
+                return;
+            }
+            SketchSession.setSketch(result.sketch);
+            preview.setSketch(result.sketch, settings);
+            meta.setText(result.sketch.strokes.size() + " strokes · "
+                    + (refine ? result.removed + " noisy lines removed · " : "")
+                    + result.textLines + " lettering lines");
+            String summary = result.summary.isEmpty() ? "" : result.summary + " · ";
+            status.setText((refine ? "Refined · " : "Drawn by Gemini · ") + summary
+                    + "check the preview before drawing");
+        });
+        if (refine) GeminiArtist.refine(requested, base, snapshot, callback);
+        else GeminiArtist.draw(requested, base, snapshot, callback);
+    }
+
+    /** Offline option: ML Kit text and object detection. */
+    private void enhanceOnDevice() {
         if (source == null || source.isRecycled()) {
             status.setText("Choose an image first");
             return;
@@ -584,84 +699,40 @@ public class MainActivity extends Activity {
         if (aiBusy) return;
         aiBusy = true;
         final Bitmap requested = source;
-        status.setText("AI processor: recognizing text and important objects…");
+        status.setText("On-device AI: recognizing text and important objects…");
         AiVisionProcessor.analyze(requested, scene -> {
             if (source != requested || isFinishing() || isDestroyed()) {
                 aiBusy = false;
                 return;
             }
-            status.setText("AI processor: recovering fine contours…");
+            status.setText("On-device AI: recovering fine contours…");
             final DrawingSettings snapshot = settings.copy();
             final SketchSession.Token workToken = new SketchSession.Token();
             new Thread(() -> {
                 try {
-                    Sketch result = AiGuidedSketch.enhance(requested, baseline,
-                            scene, snapshot, workToken);
+                    Sketch result = AiGuidedSketch.enhance(requested, baseline, scene, snapshot, workToken);
                     runOnUiThread(() -> {
                         if (source != requested || isFinishing() || isDestroyed()) return;
                         aiBusy = false;
                         SketchSession.setSketch(result);
                         preview.setSketch(result, settings);
-                        meta.setText(result.strokes.size() + " strokes · " +
-                                scene.objects.size() + " object regions · " +
-                                scene.lettering.size() + " text regions");
+                        meta.setText(result.strokes.size() + " strokes · "
+                                + scene.objects.size() + " object regions · "
+                                + scene.lettering.size() + " text regions");
                         if (scene.lettering.size() > 0 && captionInput != null
                                 && captionInput.length() == 0) {
                             captionInput.setText(scene.recognizedWords());
                         }
-                        status.setText("AI Enhanced · inspect text in the preview before drawing");
+                        status.setText("Enhanced on-device · inspect text in the preview before drawing");
                     });
                 } catch (Exception e) {
                     runOnUiThread(() -> {
                         aiBusy = false;
-                        status.setText("AI processing failed: " + e.getMessage());
+                        status.setText("On-device AI failed: " + e.getMessage());
                     });
                 }
             }, "ai-contour-refinement").start();
         });
-    }
-
-    private void drawWithAi() {
-        if (source == null || source.isRecycled()) {
-            status.setText("Choose an image first");
-            return;
-        }
-        if (aiBusy) return;
-        String endpoint = aiEndpointInput == null
-                ? settings.aiEndpointUrl : aiEndpointInput.getText().toString().trim();
-        if (!endpoint.startsWith("https://")) {
-            status.setText("AI Draw needs your private HTTPS server URL in Adjustments");
-            return;
-        }
-        String access = aiAccessInput == null ? ""
-                : aiAccessInput.getText().toString();
-        if (!endpoint.equals(settings.aiEndpointUrl)) {
-            settings.aiEndpointUrl = endpoint;
-            persist(false);
-        }
-        final Bitmap requested = source;
-        final Sketch original = SketchSession.sketch();
-        aiBusy = true;
-        status.setText("AI drawer: creating semantic drawing paths…");
-        AiDrawerClient.generate(requested, original, endpoint, access,
-                new AiDrawerClient.Callback() {
-                    @Override public void complete(Sketch sketch, String description,
-                                                   String error) {
-                        runOnUiThread(() -> {
-                            if (source != requested || isFinishing() || isDestroyed()) return;
-                            aiBusy = false;
-                            if (sketch == null) {
-                                status.setText("AI Draw unavailable: " + error);
-                                return;
-                            }
-                            SketchSession.setSketch(sketch);
-                            preview.setSketch(sketch, settings);
-                            meta.setText(sketch.strokes.size() + " AI-guided contours");
-                            status.setText("AI Draw: " + description +
-                                    " · review preview before tracing");
-                        });
-                    }
-                });
     }
 
     private void openFloatingControls() {
@@ -679,6 +750,11 @@ public class MainActivity extends Activity {
         status.setText("Controls opened · switch to Instagram and select the drawing area");
     }
 
+    private void persistAi() {
+        SketchSession.updateSettings(settings);
+        SettingsStore.save(this, settings);
+    }
+
     private void persist(boolean structural) {
         SketchSession.updateSettings(settings);
         SettingsStore.save(this, settings);
@@ -693,7 +769,9 @@ public class MainActivity extends Activity {
         super.onResume();
         // Settings may have been edited from the floating panel while this
         // activity was in the background; mirror them back into the UI.
-        settings = SettingsStore.load(this);
+        DrawingSettings stored = SettingsStore.load(this);
+        if (aiKeyInput != null && aiKeyInput.hasFocus()) stored.geminiApiKey = settings.geminiApiKey;
+        settings = stored;
         SketchSession.updateSettings(settings);
         source = SketchSession.source();
         if (captionInput != null && !captionInput.hasFocus())
@@ -701,19 +779,21 @@ public class MainActivity extends Activity {
         styleSegments(modeChips, settings.renderMode);
         styleSegments(detailChips, settings.detailLevel);
         styleSegments(fitChips, settings.fitMode);
+        styleSegments(styleChips, settings.aiStyle);
+        styleSegments(modelChips, settings.geminiModel);
         styleToggle(centerToggle, settings.centerImage);
         refreshFromSession();
         DrawService service = DrawService.instance;
         if (accessibilityState != null) {
             if (service == null) {
                 accessibilityState.setText("Accessibility service is off");
-                accessibilityState.setTextColor(0xFFFFA36C);
+                accessibilityState.setTextColor(WARN);
             } else if (service.isDrawingActive()) {
                 accessibilityState.setText("Accessibility service is on · drawing in progress");
-                accessibilityState.setTextColor(ACCENT);
+                accessibilityState.setTextColor(TERRACOTTA);
             } else {
                 accessibilityState.setText("Accessibility service is on");
-                accessibilityState.setTextColor(0xFF6AD79A);
+                accessibilityState.setTextColor(GOOD);
             }
         }
     }

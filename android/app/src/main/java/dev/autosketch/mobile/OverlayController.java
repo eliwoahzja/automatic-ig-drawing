@@ -59,14 +59,14 @@ public final class OverlayController {
         void onNextColorRequested();
     }
 
-    private static final int SURFACE = 0xF3171921;
-    private static final int BORDER = 0x1FFFFFFF;
-    private static final int CHIP = 0xFF292D37;
-    private static final int ACCENT = 0xFF83BCFF;
-    private static final int ACCENT_SOFT = 0x334D96FF;
-    private static final int TEXT = 0xFFF3F5F9;
-    private static final int MUTED = 0xFFA0A5B4;
-    private static final int DANGER = 0xFFFF8A8A;
+    private static final int SURFACE = 0xF5FCF8F0;
+    private static final int BORDER = 0xFFE4D9C4;
+    private static final int CHIP = 0xFFEDE4D2;
+    private static final int ACCENT = 0xFFC77B52;
+    private static final int ACCENT_SOFT = 0xFFE6D3B0;
+    private static final int TEXT = 0xFF2B2621;
+    private static final int MUTED = 0xFF8D8272;
+    private static final int DANGER = 0xFFC2493B;
 
     private static final int MODE_NONE = 0;
     private static final int MODE_SELECT = 1;
@@ -220,7 +220,7 @@ public final class OverlayController {
     private RippleDrawable ripple(int background, float radiusDp) {
         GradientDrawable content = surface(background, radiusDp, 0f, 0);
         GradientDrawable mask = surface(0xFFFFFFFF, radiusDp, 0f, 0);
-        return new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), content, mask);
+        return new RippleDrawable(ColorStateList.valueOf(0x22000000), content, mask);
     }
 
     private TextView label(String text, float sizeSp, int color) {
@@ -566,13 +566,13 @@ public final class OverlayController {
         LinearLayout box = new LinearLayout(context);
         box.setOrientation(LinearLayout.VERTICAL);
         box.setGravity(Gravity.CENTER);
-        box.setBackground(ripple(text.equals("Start") ? 0xFF285FA4 : CHIP, 12));
+        box.setBackground(ripple(text.equals("Start") ? 0xFF2B2621 : CHIP, 12));
         box.setPadding(0, dp(4), 0, dp(3));
         box.setContentDescription(text);
         box.setFocusable(true);
-        TextView symbol = label(glyph, 15f, TEXT);
+        TextView symbol = label(glyph, 15f, text.equals("Start") ? 0xFFFCF8F0 : TEXT);
         symbol.setGravity(Gravity.CENTER);
-        TextView caption = label(text, 8.5f, text.equals("Start") ? 0xFFE8F4FF : MUTED);
+        TextView caption = label(text, 8.5f, text.equals("Start") ? 0xFFFCF8F0 : MUTED);
         caption.setGravity(Gravity.CENTER);
         caption.setSingleLine(true);
         box.addView(symbol, new LinearLayout.LayoutParams(-1, dp(16)));
@@ -590,7 +590,7 @@ public final class OverlayController {
         LinearLayout footer = new LinearLayout(context);
         footer.setOrientation(LinearLayout.HORIZONTAL);
         footer.setGravity(Gravity.CENTER_VERTICAL);
-        TextView hint = label("drag header · resize", 8f, 0x66FFFFFF);
+        TextView hint = label("drag header · resize", 8f, 0xAA8D8272);
         footer.addView(hint, new LinearLayout.LayoutParams(0, -1, 1f));
         GripView grip = new GripView();
         grip.setContentDescription("Resize panel");
@@ -808,7 +808,7 @@ public final class OverlayController {
     }
 
     private TextView sectionLabel(String text) {
-        TextView view = label(text.toUpperCase(), 8f, 0x88FFFFFF);
+        TextView view = label(text.toUpperCase(), 8f, MUTED);
         view.setLetterSpacing(0.12f);
         view.setPadding(0, dp(8), 0, dp(2));
         return view;
@@ -882,7 +882,7 @@ public final class OverlayController {
                     for (int k = 0; k < chips.length; k++) {
                         boolean active = k == index;
                         chips[k].setTextColor(active ? ACCENT : MUTED);
-                        chips[k].setBackground(active ? surface(ACCENT_SOFT, 8, 1f, 0x557CC6FF)
+                        chips[k].setBackground(active ? surface(ACCENT_SOFT, 8, 1f, 0xFFD5BD90)
                                 : ripple(CHIP, 8));
                     }
                     sink.onValue(index, reprocess);
@@ -893,7 +893,7 @@ public final class OverlayController {
         for (int i = 0; i < chips.length; i++) {
             boolean active = i == selected;
             chips[i].setTextColor(active ? ACCENT : MUTED);
-            chips[i].setBackground(active ? surface(ACCENT_SOFT, 8, 1f, 0x557CC6FF)
+            chips[i].setBackground(active ? surface(ACCENT_SOFT, 8, 1f, 0xFFD5BD90)
                     : ripple(CHIP, 8));
         }
         return row;
@@ -906,7 +906,7 @@ public final class OverlayController {
         row.addView(label(name, 9.5f, MUTED), new LinearLayout.LayoutParams(0, dp(20), 1f));
         final TextView pill = chipButton(enabled ? "On" : "Off", 9f, enabled ? ACCENT : MUTED);
         pill.setBackground(surface(enabled ? ACCENT_SOFT : CHIP, 8, 1f,
-                enabled ? 0x557CC6FF : 0x00000000));
+                enabled ? 0xFFD5BD90 : 0x00000000));
         pill.setContentDescription(name);
         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(dp(48), dp(20));
         row.addView(pill, params);
@@ -918,7 +918,7 @@ public final class OverlayController {
                 pill.setText(state[0] ? "On" : "Off");
                 pill.setTextColor(state[0] ? ACCENT : MUTED);
                 pill.setBackground(surface(state[0] ? ACCENT_SOFT : CHIP, 8, 1f,
-                        state[0] ? 0x557CC6FF : 0x00000000));
+                        state[0] ? 0xFFD5BD90 : 0x00000000));
                 sink.onValue(state[0] ? 1 : 0, reprocess);
                 scheduleSettings(reprocess);
             }
@@ -1364,7 +1364,7 @@ public final class OverlayController {
     private View handle(String glyph, int mode, int width, int height) {
         TextView view = label(glyph, 12f, TEXT);
         view.setGravity(Gravity.CENTER);
-        GradientDrawable shape = surface(0xE6242730, 10, 1f, 0x807CC6FF);
+        GradientDrawable shape = surface(0xF2FCF8F0, 10, 1f, 0xCCC77B52);
         view.setBackground(shape);
         view.setContentDescription(mode == 0 ? "Move drawing area" : "Resize drawing area");
         WindowManager.LayoutParams params = overlayParams(width, height, true);
@@ -1618,7 +1618,7 @@ public final class OverlayController {
 
         ProgressBarView() {
             super(context);
-            track.setColor(0x22FFFFFF);
+            track.setColor(0x22000000);
             fill.setColor(ACCENT);
         }
 
@@ -1648,7 +1648,7 @@ public final class OverlayController {
 
         GripView() {
             super(context);
-            paint.setColor(0x66FFFFFF);
+            paint.setColor(0xAA8D8272);
             paint.setStrokeWidth(dp(1.2f));
             paint.setStrokeCap(Paint.Cap.ROUND);
         }
@@ -1675,7 +1675,7 @@ public final class OverlayController {
         MiniIconView() {
             super(context);
             background.setColor(SURFACE);
-            border.setColor(0x33FFFFFF);
+            border.setColor(0xFFE4D9C4);
             border.setStyle(Paint.Style.STROKE);
             border.setStrokeWidth(dp(1f));
             arc.setColor(ACCENT);
@@ -1740,15 +1740,15 @@ public final class OverlayController {
         SelectionView() {
             super(context);
             dim.setColor(0x33000000);
-            areaFill.setColor(0x0A7CC6FF);
-            border.setColor(0xCC7CC6FF);
+            areaFill.setColor(0x0AC77B52);
+            border.setColor(0xCCC77B52);
             border.setStyle(Paint.Style.STROKE);
             border.setStrokeWidth(dp(1.4f));
             bracket.setColor(ACCENT);
             bracket.setStyle(Paint.Style.STROKE);
             bracket.setStrokeWidth(dp(3f));
             bracket.setStrokeCap(Paint.Cap.ROUND);
-            previewPaint.setColor(0xB37CC6FF);
+            previewPaint.setColor(0xCCC77B52);
             previewPaint.setStyle(Paint.Style.STROKE);
             previewPaint.setStrokeWidth(dp(1.1f));
             previewPaint.setStrokeCap(Paint.Cap.ROUND);
@@ -1758,7 +1758,7 @@ public final class OverlayController {
             previewDone.setStrokeWidth(dp(1.3f));
             previewDone.setStrokeCap(Paint.Cap.ROUND);
             previewDone.setStrokeJoin(Paint.Join.ROUND);
-            chipBackground.setColor(0xE616171C);
+            chipBackground.setColor(0xF2FCF8F0);
             chipText.setColor(TEXT);
             chipText.setTextSize(dp(9));
             chipText.setAntiAlias(true);

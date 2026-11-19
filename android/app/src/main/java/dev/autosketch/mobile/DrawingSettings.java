@@ -27,6 +27,11 @@ public final class DrawingSettings {
     public static final String[] FIT_NAMES = {"Contain", "Fill", "Stretch"};
     public static final String[] MODE_NAMES = {"Sketch", "Clean", "Full", "Color"};
 
+    /** Primary model first; the client falls back to the next one when it is busy. */
+    public static final String[] GEMINI_MODEL_IDS = {"gemini-3.5-flash", "gemini-3.1-flash-lite"};
+    public static final String[] GEMINI_MODEL_NAMES = {"3.5 Flash", "Flash-Lite"};
+    public static final String[] AI_STYLE_NAMES = {"Outline", "Detailed", "Minimal"};
+
     /** 0..3, see DETAIL_*. */
     public int detailLevel = DETAIL_HIGH;
     /** 0..2, see MODE_*. */
@@ -62,7 +67,14 @@ public final class DrawingSettings {
     /** Minimum pause between two strokes, keeps apps responsive. */
     public int strokeGapMs = 24;
 
-    public String aiEndpointUrl = "";
+    /** Gemini API key, stored privately on the device and sent only to Google. */
+    public String geminiApiKey = "";
+    /** Index into GEMINI_MODEL_IDS. */
+    public int geminiModel = 0;
+    /** Index into AI_STYLE_NAMES, steers what AI Draw produces. */
+    public int aiStyle = 0;
+    /** Optional free-text hint for the AI ("focus on the face"). */
+    public String aiFocus = "";
     public int colorDensity = 55;
     public String captionText = "";
     public int captionXPercent = 65;
@@ -95,7 +107,10 @@ public final class DrawingSettings {
         other.maxStrokeDurationMs = maxStrokeDurationMs;
         other.drawingSpeedPxPerSec = drawingSpeedPxPerSec;
         other.strokeGapMs = strokeGapMs;
-        other.aiEndpointUrl = aiEndpointUrl;
+        other.geminiApiKey = geminiApiKey;
+        other.geminiModel = geminiModel;
+        other.aiStyle = aiStyle;
+        other.aiFocus = aiFocus;
         other.colorDensity = colorDensity;
         other.captionText = captionText;
         other.captionXPercent = captionXPercent;

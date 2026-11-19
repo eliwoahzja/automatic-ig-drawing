@@ -136,7 +136,7 @@ public final class AiGuidedSketch {
         ArrayList<float[]> strokes = new ArrayList<>();
         if (line.text == null || line.text.trim().isEmpty()) return strokes;
         Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
+        paint.setTypeface(Typeface.create("sans-serif-rounded", Typeface.BOLD));
         paint.setStyle(Paint.Style.FILL);
         float desiredHeight = line.height * height * .94f;
         float size = Math.max(6f, desiredHeight);

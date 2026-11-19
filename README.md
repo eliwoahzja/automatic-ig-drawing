@@ -6,7 +6,7 @@ An automated drawing tool that converts images into edge-based sketches and draw
 
 The Android version lives in [`android/`](android) and is built from a full computer-vision pipeline (grayscale with alpha compositing, resolution-scaled Gaussian smoothing, Canny with non-maximum suppression and hysteresis, despeckling, Zhang-Suen thinning, ordered contour tracing, Douglas-Peucker simplification, a colour-saliency gate that rejects texture and glitter, decoration removal, double-outline suppression, stroke ordering and continuous gesture chunks). Three render modes are available: **Sketch** (contours), **Clean** (fewer, stronger lines) and **Full** (contours plus tonal cross-hatching). It draws through Instagram's drawing canvas without root or APK modification.
 
-See [android/README.md](android/README.md) for install steps, the floating control panel, drawing settings and the debug APK workflow. The Python desktop implementation below is unchanged.
+The Android app also has a Gemini-powered AI artist (**Refine** and **Draw**) that works straight from the phone with your own API key. See [android/README.md](android/README.md) for setup, the floating control panel, drawing settings and the debug APK workflow. The Python desktop implementation below is unchanged.
 
 ## Features
 

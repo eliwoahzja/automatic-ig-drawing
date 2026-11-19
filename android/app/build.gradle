@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
     namespace 'dev.autosketch.mobile'
     compileSdk 35
-    defaultConfig { applicationId 'dev.autosketch.mobile'; minSdk 26; targetSdk 32; versionCode 3; versionName '1.1-ai' }
+    defaultConfig { applicationId 'dev.autosketch.mobile'; minSdk 26; targetSdk 32; versionCode 5; versionName '1.2.1-gemini' }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
     testOptions { unitTests.returnDefaultValues = true }
     lint { abortOnError false }
@@ -11,4 +11,6 @@ dependencies {
     implementation 'com.google.mlkit:text-recognition:16.0.1'
     implementation 'com.google.mlkit:object-detection:17.0.2'
     testImplementation 'junit:junit:4.13.2'
+    // android.jar stubs org.json in unit tests, so use the real implementation there.
+    testImplementation 'org.json:json:20240303'
 }

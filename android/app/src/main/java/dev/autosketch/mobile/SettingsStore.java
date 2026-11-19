@@ -2,11 +2,22 @@ package dev.autosketch.mobile;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+import java.security.KeyStore;
+import java.security.SecureRandom;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
 
 /** Persists drawing settings and overlay geometry. */
 public final class SettingsStore {
 
     private static final String FILE = "autosketch_settings";
+    private static final String ENCRYPTED_KEY = "gemini_key_encrypted";
+    private static final String KEY_ALIAS = "autosketch_gemini_key_v1";
     private static final String KEY_X = "overlay_x";
     private static final String KEY_Y = "overlay_y";
     private static final String KEY_WIDTH = "overlay_width";
@@ -18,8 +29,65 @@ public final class SettingsStore {
     private SettingsStore() {
     }
 
+    private static int clampIndex(int value, int size) {
+        return value < 0 ? 0 : (value >= size ? size - 1 : value);
+    }
+
     private static SharedPreferences prefs(Context context) {
         return context.getApplicationContext().getSharedPreferences(FILE, Context.MODE_PRIVATE);
+    }
+
+    private static SecretKey secretKey() throws Exception {
+        KeyStore store = KeyStore.getInstance("AndroidKeyStore");
+        store.load(null);
+        SecretKey key = (SecretKey) store.getKey(KEY_ALIAS, null);
+        if (key != null) return key;
+        KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+        generator.init(new KeyGenParameterSpec.Builder(KEY_ALIAS,
+                KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build());
+        return generator.generateKey();
+    }
+
+    private static String encryptSecret(String plain) throws Exception {
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey());
+        byte[] iv = cipher.getIV();
+        byte[] ciphertext = cipher.doFinal(plain.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        byte[] data = new byte[iv.length + ciphertext.length];
+        System.arraycopy(iv, 0, data, 0, iv.length);
+        System.arraycopy(ciphertext, 0, data, iv.length, ciphertext.length);
+        return Base64.encodeToString(data, Base64.NO_WRAP);
+    }
+
+    private static String decryptSecret(String encoded) throws Exception {
+        byte[] data = Base64.decode(encoded, Base64.NO_WRAP);
+        if (data.length < 29) return "";
+        byte[] iv = java.util.Arrays.copyOfRange(data, 0, 12);
+        byte[] ciphertext = java.util.Arrays.copyOfRange(data, 12, data.length);
+        Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
+        cipher.init(Cipher.DECRYPT_MODE, secretKey(), new GCMParameterSpec(128, iv));
+        return new String(cipher.doFinal(ciphertext), java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    private static String readGeminiKey(SharedPreferences prefs) {
+        String encrypted = prefs.getString(ENCRYPTED_KEY, "");
+        if (encrypted != null && !encrypted.isEmpty()) {
+            try { return decryptSecret(encrypted); }
+            catch (Exception ignored) { return ""; }
+        }
+        String legacy = prefs.getString("gemini_key", "");
+        if (legacy == null || legacy.isEmpty()) return "";
+        try {
+            prefs.edit().putString(ENCRYPTED_KEY, encryptSecret(legacy))
+                    .remove("gemini_key").commit();
+        } catch (Exception ignored) {
+            prefs.edit().remove("gemini_key").apply();
+        }
+        return legacy;
     }
 
     public static DrawingSettings load(Context context) {
@@ -28,7 +96,12 @@ public final class SettingsStore {
         settings.detailLevel = prefs.getInt("detail", settings.detailLevel);
         settings.renderMode = prefs.getInt("render_mode", settings.renderMode);
         settings.colorDensity = prefs.getInt("color_density", settings.colorDensity);
-        settings.aiEndpointUrl = prefs.getString("ai_endpoint_url", "");
+        settings.geminiApiKey = readGeminiKey(prefs);
+        settings.geminiModel = clampIndex(prefs.getInt("gemini_model", 0),
+                DrawingSettings.GEMINI_MODEL_IDS.length);
+        settings.aiStyle = clampIndex(prefs.getInt("ai_style", 0),
+                DrawingSettings.AI_STYLE_NAMES.length);
+        settings.aiFocus = prefs.getString("ai_focus", "");
         settings.captionText = prefs.getString("caption", settings.captionText);
         settings.captionXPercent = prefs.getInt("caption_x", settings.captionXPercent);
         settings.captionYPercent = prefs.getInt("caption_y", settings.captionYPercent);
@@ -54,11 +127,21 @@ public final class SettingsStore {
     }
 
     public static void save(Context context, DrawingSettings settings) {
-        prefs(context).edit()
-                .putInt("detail", settings.detailLevel)
+        SharedPreferences prefs = prefs(context);
+        SharedPreferences.Editor editor = prefs.edit();
+        if (settings.geminiApiKey != null && !settings.geminiApiKey.isEmpty()) {
+            try { editor.putString(ENCRYPTED_KEY, encryptSecret(settings.geminiApiKey)); }
+            catch (Exception ignored) { editor.remove(ENCRYPTED_KEY); }
+        } else {
+            editor.remove(ENCRYPTED_KEY);
+        }
+        editor.remove("gemini_key");
+        editor.putInt("detail", settings.detailLevel)
                 .putInt("render_mode", settings.renderMode)
                 .putInt("color_density", settings.colorDensity)
-                .putString("ai_endpoint_url", settings.aiEndpointUrl)
+                .putInt("gemini_model", settings.geminiModel)
+                .putInt("ai_style", settings.aiStyle)
+                .putString("ai_focus", settings.aiFocus)
                 .putString("caption", settings.captionText)
                 .putInt("caption_x", settings.captionXPercent)
                 .putInt("caption_y", settings.captionYPercent)

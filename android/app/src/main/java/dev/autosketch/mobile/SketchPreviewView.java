@@ -17,6 +17,8 @@ import java.util.ArrayList;
  */
 public final class SketchPreviewView extends View {
 
+    private static final int INK = 0xFF2B2621;
+
     private final Paint cardPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint borderPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint imagePaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -35,17 +37,17 @@ public final class SketchPreviewView extends View {
 
     public SketchPreviewView(Context context, AttributeSet attrs) {
         super(context, attrs);
-        cardPaint.setColor(0xFF141722);
-        borderPaint.setColor(0x24FFFFFF);
+        cardPaint.setColor(0xFFFFFCF6);
+        borderPaint.setColor(0xFFE4D9C4);
         borderPaint.setStyle(Paint.Style.STROKE);
         borderPaint.setStrokeWidth(dp(1));
-        imagePaint.setAlpha(120);
-        strokePaint.setColor(0xFFF2F4F8);
+        imagePaint.setAlpha(110);
+        strokePaint.setColor(INK);
         strokePaint.setStyle(Paint.Style.STROKE);
         strokePaint.setStrokeCap(Paint.Cap.ROUND);
         strokePaint.setStrokeJoin(Paint.Join.ROUND);
         strokePaint.setStrokeWidth(dp(1.1f));
-        placeholderPaint.setColor(0xFF667085);
+        placeholderPaint.setColor(0xFFB3A892);
         placeholderPaint.setTextSize(dp(12));
         placeholderPaint.setTextAlign(Paint.Align.CENTER);
     }
@@ -63,9 +65,9 @@ public final class SketchPreviewView extends View {
         sketch = nextSketch == null ? Sketch.empty() : nextSketch;
         settings = nextSettings == null ? new DrawingSettings() : nextSettings;
         strokePaint.setStrokeWidth(dp(1.1f));
-        imagePaint.setAlpha(sketch.isEmpty() ? 225 :
+        imagePaint.setAlpha(sketch.isEmpty() ? 235 :
                 nextSettings != null && nextSettings.renderMode == DrawingSettings.MODE_COLOR
-                        ? 18 : 65);
+                        ? 30 : 48);
         invalidate();
     }
 
@@ -73,7 +75,7 @@ public final class SketchPreviewView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
         float inset = dp(6);
-        float radius = dp(16);
+        float radius = dp(24);
         rect.set(inset, inset, getWidth() - inset, getHeight() - inset);
         clip.reset();
         clip.addRoundRect(rect, radius, radius, Path.Direction.CW);
@@ -98,7 +100,7 @@ public final class SketchPreviewView extends View {
                             sketch.width, sketch.height, settings));
                 }
             } else {
-                strokePaint.setColor(0xFFF2F4F8);
+                strokePaint.setColor(INK);
                 renderStrokes(canvas, CanvasMapper.mapStrokes(sketch.strokes, area,
                         sketch.width, sketch.height, settings));
             }
